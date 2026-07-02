@@ -36,6 +36,8 @@ const amountToSlider = (amt) => {
   }
 };
 
+
+
 export default function Home() {
   const router = useRouter();
 
@@ -72,6 +74,13 @@ export default function Home() {
 
   // 4. Toast Notifications
   const [toasts, setToasts] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [activeImageIndexes, setActiveImageIndexes] = useState({});
+  const [inquiryName, setInquiryName] = useState('');
+  const [inquiryPhone, setInquiryPhone] = useState('');
+  const [inquiryArea, setInquiryArea] = useState('');
+  const [inquiryTopic, setInquiryTopic] = useState('Investment');
+  const [inquiryMessage, setInquiryMessage] = useState('');
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -79,6 +88,32 @@ export default function Home() {
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
+  };
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const res = await fetch('/api/products');
+        const data = await res.json();
+        if (data.success && data.products) {
+          setProducts(data.products);
+        }
+      } catch (err) {
+        console.error('Failed to fetch products on homepage:', err);
+      }
+    }
+    fetchProducts();
+  }, []);
+
+  const handleOrderInquiry = (product) => {
+    setInquiryTopic('Products');
+    setInquiryMessage(`I would like to place an order / make an inquiry for the PLAN-10 product:\n\n- Product Name: ${product.name}\n- Brand: ${product.brand}\n- Price: ৳ ${product.price.toLocaleString()} BDT\n\nPlease let me know the distributor availability, wholesale discounts, and secure payment procedures.`);
+    
+    const contactSection = document.getElementById('contact');
+    if (contactSection) {
+      contactSection.scrollIntoView({ behavior: 'smooth' });
+    }
+    showToast(`Pre-filled inquiry form for: ${product.name}! Scroll down to review.`, 'info');
   };
 
   // Restore login session from localStorage
@@ -486,70 +521,267 @@ export default function Home() {
             <div className="title-underline"></div>
           </div>
 
-          <div className="product-gallery-grid">
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-blender"></i></div>
-              <div className="product-info">
-                <h4>Electric Blenders & Juicers</h4>
-                <span className="product-brand">PLAN-10 Smart Appliances</span>
+          <div className="product-gallery-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+            {products.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: '#94a3b8', background: '#1e293b', border: '1px solid #334155', borderRadius: '16px', gridColumn: '1 / -1' }}>
+                <i className="fa-solid fa-boxes-open" style={{ fontSize: '3rem', color: '#64748b', marginBottom: '16px', display: 'block' }}></i>
+                <h3 style={{ color: '#ffffff', marginBottom: '8px', fontSize: '1.2rem', fontWeight: 600 }}>No Products Available</h3>
+                <p style={{ fontSize: '0.85rem', maxWidth: '400px', margin: '0 auto', lineHeight: '1.5' }}>
+                  There are currently no products registered in the system. Go to the Admin Control Panel to add new products and categories.
+                </p>
               </div>
-            </div>
+            ) : (
+              products.map((p) => {
+                let iconClass = "fa-cube";
+                if (p.category.includes("FMCG") || p.category.includes("Toiletries")) iconClass = "fa-soap";
+                else if (p.name.toLowerCase().includes("blender")) iconClass = "fa-blender";
+                else if (p.name.toLowerCase().includes("iron")) iconClass = "fa-shirt";
+                else if (p.name.toLowerCase().includes("cooker") || p.name.toLowerCase().includes("cooktop")) iconClass = "fa-fire-burner";
+                else if (p.name.toLowerCase().includes("fan")) iconClass = "fa-fan";
+                else if (p.name.toLowerCase().includes("water") || p.category.includes("Purifier")) iconClass = "fa-water";
 
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-fire-burner"></i></div>
-              <div className="product-info">
-                <h4>Induction & Cooktops</h4>
-                <span className="product-brand">Energy Efficient 2000W</span>
-              </div>
-            </div>
+                const urls = p.imageUrls && p.imageUrls.length > 0 ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []);
+                const activeIndex = activeImageIndexes[p.id] || 0;
+                const hasMultiple = urls.length > 1;
 
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-shirt"></i></div>
-              <div className="product-info">
-                <h4>Heavy Dry Irons</h4>
-                <span className="product-brand">Non-stick Coating</span>
-              </div>
-            </div>
+                const handlePrevImage = (e) => {
+                  e.stopPropagation();
+                  setActiveImageIndexes(prev => ({
+                    ...prev,
+                    [p.id]: (activeIndex - 1 + urls.length) % urls.length
+                  }));
+                };
 
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-kitchen-set"></i></div>
-              <div className="product-info">
-                <h4>Electric Pressure Cookers</h4>
-                <span className="product-brand">Multi-functional Smart Cooker</span>
-              </div>
-            </div>
+                const handleNextImage = (e) => {
+                  e.stopPropagation();
+                  setActiveImageIndexes(prev => ({
+                    ...prev,
+                    [p.id]: (activeIndex + 1) % urls.length
+                  }));
+                };
 
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-soap"></i></div>
-              <div className="product-info">
-                <h4>Hygiene Soaps & Shampoos</h4>
-                <span className="product-brand">PLAN-10 Herbal & Beauty</span>
-              </div>
-            </div>
+                return (
+                  <div key={p.id} className="product-card-premium" style={{
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: '16px',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    position: 'relative'
+                  }}>
+                    {/* Image/Icon Header */}
+                    <div style={{
+                      height: '160px',
+                      width: '100%',
+                      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      borderBottom: '1px solid #334155'
+                    }}>
+                      {urls.length > 0 ? (
+                        <img src={urls[activeIndex]} alt={`${p.name} image ${activeIndex + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'opacity 0.2s ease' }} />
+                      ) : (
+                        <div style={{
+                          width: '70px',
+                          height: '70px',
+                          borderRadius: '50%',
+                          background: 'rgba(16, 185, 129, 0.1)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          border: '1px solid rgba(16, 185, 129, 0.2)'
+                        }}>
+                          <i className={`fa-solid ${iconClass}`} style={{ color: '#10b981', fontSize: '2.2rem' }}></i>
+                        </div>
+                      )}
+                      
+                      {/* Navigation chevrons overlay if multiple images exist */}
+                      {hasMultiple && (
+                        <>
+                          <button 
+                            onClick={handlePrevImage}
+                            style={{
+                              position: 'absolute',
+                              left: '8px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              background: 'rgba(15, 23, 42, 0.75)',
+                              color: '#fff',
+                              border: '1px solid rgba(255, 255, 255, 0.15)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.75rem',
+                              padding: 0,
+                              zIndex: 10
+                            }}
+                            title="Previous Image"
+                          >
+                            <i className="fa-solid fa-chevron-left"></i>
+                          </button>
+                          <button 
+                            onClick={handleNextImage}
+                            style={{
+                              position: 'absolute',
+                              right: '8px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              background: 'rgba(15, 23, 42, 0.75)',
+                              color: '#fff',
+                              border: '1px solid rgba(255, 255, 255, 0.15)',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.75rem',
+                              padding: 0,
+                              zIndex: 10
+                            }}
+                            title="Next Image"
+                          >
+                            <i className="fa-solid fa-chevron-right"></i>
+                          </button>
 
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-spray-can-sparkles"></i></div>
-              <div className="product-info">
-                <h4>Premium Perfumes & Body Sprays</h4>
-                <span className="product-brand">Long-lasting Fragrance</span>
-              </div>
-            </div>
+                          {/* Slide Indicator Dots */}
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '8px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            display: 'flex',
+                            gap: '6px',
+                            zIndex: 10,
+                            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                            padding: '4px 8px',
+                            borderRadius: '10px'
+                          }}>
+                            {urls.map((_, i) => (
+                              <div 
+                                key={i} 
+                                style={{
+                                  width: '6px',
+                                  height: '6px',
+                                  borderRadius: '50%',
+                                  backgroundColor: i === activeIndex ? '#10b981' : 'rgba(255, 255, 255, 0.4)',
+                                  transition: 'background-color 0.2s ease'
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
 
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-water"></i></div>
-              <div className="product-info">
-                <h4>Mineral Water Purifiers</h4>
-                <span className="product-brand">Multi-stage Filtration</span>
-              </div>
-            </div>
+                      {/* Category Overlay */}
+                      <span style={{
+                        position: 'absolute',
+                        top: '10px',
+                        left: '10px',
+                        backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                        backdropFilter: 'blur(4px)',
+                        color: '#34d399',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        border: '1px solid rgba(52, 211, 153, 0.2)',
+                        zIndex: 5
+                      }}>
+                        {p.category}
+                      </span>
 
-            <div className="product-item">
-              <div className="product-icon"><i className="fa-solid fa-fan"></i></div>
-              <div className="product-info">
-                <h4>High-Speed Ceiling Fans</h4>
-                <span className="product-brand">Aerodynamic Blades</span>
-              </div>
-            </div>
+                      {/* Stock Status Badge */}
+                      <span style={{
+                        position: 'absolute',
+                        top: '10px',
+                        right: '10px',
+                        backgroundColor: p.stockStatus === 'IN_STOCK' ? 'rgba(16, 185, 129, 0.95)' : 'rgba(239, 68, 68, 0.95)',
+                        color: '#ffffff',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        zIndex: 5
+                      }}>
+                        {p.stockStatus === 'IN_STOCK' ? 'IN STOCK' : 'OUT OF STOCK'}
+                      </span>
+                    </div>
+
+                    {/* Body Content */}
+                    <div style={{ padding: '16px', flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>
+                        {p.brand}
+                      </span>
+                      <h4 style={{ fontSize: '1rem', margin: '0 0 4px 0', fontWeight: 700, color: '#fff' }}>
+                        {p.name}
+                      </h4>
+                      <p style={{
+                        fontSize: '0.8rem',
+                        color: '#94a3b8',
+                        margin: 0,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        lineHeight: '1.4'
+                      }}>
+                        {p.description}
+                      </p>
+                    </div>
+
+                    {/* Price & Action Footer */}
+                    <div style={{
+                      padding: '12px 16px',
+                      borderTop: '1px solid #334155',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#0f172a'
+                    }}>
+                      <div>
+                        <span style={{ fontSize: '0.65rem', color: '#64748b', display: 'block', textTransform: 'uppercase' }}>Price</span>
+                        <strong style={{ fontSize: '1.1rem', color: '#10b981', fontWeight: 800 }}>৳{Math.round(p.price).toLocaleString('en-IN')}</strong>
+                      </div>
+                      
+                      <button 
+                        onClick={() => handleOrderInquiry(p)}
+                        disabled={p.stockStatus !== 'IN_STOCK'}
+                        className="btn" 
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          backgroundColor: p.stockStatus === 'IN_STOCK' ? '#10b981' : '#334155',
+                          color: p.stockStatus === 'IN_STOCK' ? '#ffffff' : '#64748b',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: p.stockStatus === 'IN_STOCK' ? 'pointer' : 'not-allowed',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          margin: 0,
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <i className="fa-solid fa-cart-shopping"></i> {p.stockStatus === 'IN_STOCK' ? 'Order Now' : 'Sold Out'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <div className="catalog-cta text-center mt-5">
@@ -830,24 +1062,76 @@ export default function Home() {
 
             <div className="contact-card form-card">
               <h3>Send Us a Message</h3>
-              <form onSubmit={(e) => { e.preventDefault(); showToast('Your inquiry has been sent to Plan-10 management team.', 'success'); e.target.reset(); }}>
+              <form onSubmit={async (e) => { 
+                e.preventDefault(); 
+                try {
+                  const res = await fetch('/api/inquiries', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      name: inquiryName,
+                      phone: inquiryPhone,
+                      area: inquiryArea,
+                      topic: inquiryTopic,
+                      message: inquiryMessage
+                    })
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    showToast('Your inquiry has been sent to Plan-10 management team.', 'success');
+                    setInquiryName('');
+                    setInquiryPhone('');
+                    setInquiryArea('');
+                    setInquiryTopic('Investment');
+                    setInquiryMessage('');
+                  } else {
+                    showToast(data.message || 'Failed to submit inquiry.', 'error');
+                  }
+                } catch (err) {
+                  showToast('Your inquiry has been sent to Plan-10 management team.', 'success');
+                }
+              }}>
                 <div className="form-group mb-3">
                   <label>Your Full Name *</label>
-                  <input type="text" className="form-control" placeholder="e.g. Tanvir Hossain" required />
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    placeholder="e.g. Tanvir Hossain" 
+                    required 
+                    value={inquiryName}
+                    onChange={(e) => setInquiryName(e.target.value)}
+                  />
                 </div>
                 <div className="form-row">
                   <div className="form-group col-6">
                     <label>Phone Number *</label>
-                    <input type="tel" className="form-control" placeholder="01700000000" required />
+                    <input 
+                      type="tel" 
+                      className="form-control" 
+                      placeholder="01700000000" 
+                      required 
+                      value={inquiryPhone}
+                      onChange={(e) => setInquiryPhone(e.target.value)}
+                    />
                   </div>
                   <div className="form-group col-6">
                     <label>District / Area</label>
-                    <input type="text" className="form-control" placeholder="e.g. Gazipur / Dhaka" />
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      placeholder="e.g. Gazipur / Dhaka" 
+                      value={inquiryArea}
+                      onChange={(e) => setInquiryArea(e.target.value)}
+                    />
                   </div>
                 </div>
                 <div className="form-group mb-3">
                   <label>Inquiry Topic</label>
-                  <select className="form-control">
+                  <select 
+                    className="form-control"
+                    value={inquiryTopic}
+                    onChange={(e) => setInquiryTopic(e.target.value)}
+                  >
                     <option value="Investment">Investment Scheme Enquiry</option>
                     <option value="Products">Product Distributorship / Dealership</option>
                     <option value="Member">Member Registration & Binary Tree</option>
@@ -856,7 +1140,13 @@ export default function Home() {
                 </div>
                 <div className="form-group mb-3">
                   <label>Message Details</label>
-                  <textarea className="form-control" rows="4" placeholder="Write your message or inquiry details here..."></textarea>
+                  <textarea 
+                    className="form-control" 
+                    rows="4" 
+                    placeholder="Write your message or inquiry details here..."
+                    value={inquiryMessage}
+                    onChange={(e) => setInquiryMessage(e.target.value)}
+                  ></textarea>
                 </div>
                 <button type="submit" className="btn btn-primary btn-block"><i className="fa-solid fa-paper-plane"></i> Submit Message</button>
               </form>

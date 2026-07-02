@@ -82,7 +82,7 @@ export default function AdminInquiriesPage() {
                   </td>
                   <td><a href={`tel:${inq.phone}`} style={{ color: '#2563eb', fontWeight: 600 }}>{inq.phone}</a></td>
                   <td><span className="badge-status badge-pending">{inq.topic}</span></td>
-                  <td style={{ maxWidth: '300px' }}><small>{inq.message}</small></td>
+                  <td style={{ maxWidth: '400px', whiteSpace: 'normal', wordBreak: 'break-word' }}><small>{inq.message}</small></td>
                   <td><small style={{ color: '#64748b' }}>{new Date(inq.date).toLocaleDateString()}</small></td>
                   <td>
                     <button className="btn-action btn-delete" onClick={() => handleDelete(inq.id)} title="Admin Only: Delete Inquiry">

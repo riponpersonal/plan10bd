@@ -52,7 +52,7 @@ export default function DashboardLayout({ children }) {
   };
 
   return (
-    <DashboardTabContext.Provider value={{ activeTab, setActiveTab }}>
+    <DashboardTabContext.Provider value={{ activeTab, setActiveTab, user, setUser }}>
       <div className="user-dash-wrapper">
         {/* Main Content Area with Full Width Top-Navigation Dropdown */}
         <main className="user-main-content full-width">
@@ -113,7 +113,7 @@ export default function DashboardLayout({ children }) {
               </div>
 
               <div className="header-title-box">
-                <h1>Member Profile</h1>
+                <h1>{user?.name || 'Investor Member'}</h1>
               </div>
             </div>
 

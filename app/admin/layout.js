@@ -1,14 +1,52 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import './admin.css';
 
 export default function AdminLayout({ children }) {
   const pathname = usePathname();
-  const [pendingBadge, setPendingBadge] = useState(2);
+  const [pendingBadge, setPendingBadge] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
+
+  async function fetchPendingCount() {
+    try {
+      const res = await fetch('/api/applications');
+      const data = await res.json();
+      if (data.success && data.applications) {
+        const pending = data.applications.filter((a) => a.status === 'PENDING').length;
+        setPendingBadge(pending);
+      }
+    } catch (e) {
+      console.error('Failed to fetch pending applications count', e);
+    }
+  }
+
+  useEffect(() => {
+    fetchPendingCount();
+
+    window.addEventListener('applications-updated', fetchPendingCount);
+    return () => {
+      window.removeEventListener('applications-updated', fetchPendingCount);
+    };
+  }, []);
+
+  useEffect(() => {
+    fetchPendingCount();
+  }, [pathname]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     // Ensure admin session is persisted in localStorage when visiting admin pages
@@ -27,12 +65,14 @@ export default function AdminLayout({ children }) {
   // Close sidebar on route change on mobile
   useEffect(() => {
     setIsSidebarOpen(false);
+    setIsUserMenuOpen(false);
   }, [pathname]);
 
   const navItems = [
     { label: 'Dashboard Overview', href: '/admin', icon: 'fa-chart-line' },
     { label: 'SPL Applications', href: '/admin/applications', icon: 'fa-file-contract', badge: pendingBadge },
     { label: 'Active Members', href: '/admin/members', icon: 'fa-users' },
+    { label: 'Referral Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
     { label: 'Monthly Payouts', href: '/admin/payouts', icon: 'fa-hand-holding-dollar' },
     { label: 'Products & Sectors', href: '/admin/products', icon: 'fa-boxes-packing' },
     { label: 'Inquiries & Leads', href: '/admin/inquiries', icon: 'fa-envelope-open-text' }
@@ -98,22 +138,51 @@ export default function AdminLayout({ children }) {
               <h1>PLAN-10 Control Center</h1>
             </div>
           </div>
-          <div className="header-user" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div className="user-info">
-              <span>System Administrator</span>
-              <small>Role: Corporate Admin</small>
-            </div>
-            <div className="avatar">A</div>
+          <div className="header-user-wrapper" ref={userMenuRef} style={{ position: 'relative' }}>
             <button
-              onClick={() => {
-                localStorage.removeItem('plan10_user');
-                window.location.href = '/';
-              }}
-              style={{ background: 'none', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', color: '#ef4444', fontWeight: 600, fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              title="Sign Out of Corporate Admin"
+              className="user-admin-btn"
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              aria-label="User Admin Menu"
+              title="Admin Options"
             >
-              <i className="fa-solid fa-right-from-bracket"></i> Sign Out
+              <div className="user-admin-icon-box">
+                <i className="fa-solid fa-user-gear"></i>
+              </div>
+              <i className={`fa-solid fa-chevron-down dropdown-arrow ${isUserMenuOpen ? 'open' : ''}`}></i>
             </button>
+
+            {isUserMenuOpen && (
+              <div className="admin-user-dropdown">
+                <div className="dropdown-header">
+                  <div className="dropdown-user-badge">
+                    <i className="fa-solid fa-shield-halved"></i>
+                  </div>
+                  <div>
+                    <div className="dropdown-title">System Administrator</div>
+                    <div className="dropdown-subtitle">Corporate Admin</div>
+                  </div>
+                </div>
+                <div className="dropdown-divider"></div>
+                <Link
+                  href="/admin/info"
+                  className="dropdown-item"
+                  onClick={() => setIsUserMenuOpen(false)}
+                >
+                  <i className="fa-solid fa-user-shield"></i>
+                  <span>Admin Information</span>
+                </Link>
+                <button
+                  className="dropdown-item logout-item"
+                  onClick={() => {
+                    localStorage.removeItem('plan10_user');
+                    window.location.href = '/';
+                  }}
+                >
+                  <i className="fa-solid fa-right-from-bracket"></i>
+                  <span>Log Out</span>
+                </button>
+              </div>
+            )}
           </div>
         </header>
 

@@ -35,6 +35,7 @@ export default function AdminApplicationsPage() {
       if (data.success) {
         setMessage(`Application ${id} status updated to ${newStatus}`);
         fetchApplications();
+        window.dispatchEvent(new CustomEvent('applications-updated'));
         setTimeout(() => setMessage(''), 3000);
       }
     } catch (err) {
@@ -53,6 +54,7 @@ export default function AdminApplicationsPage() {
       if (data.success) {
         setMessage(`Application ${id} deleted permanently.`);
         fetchApplications();
+        window.dispatchEvent(new CustomEvent('applications-updated'));
         setTimeout(() => setMessage(''), 3000);
       } else {
         alert(data.message || 'Failed to delete application.');

@@ -32,25 +32,30 @@ export async function POST(request) {
         redirectUrl: '/admin',
         message: 'Welcome Corporate Admin! Redirecting to Control Panel...'
       });
-    } else if (user.role === 'PENDING_USER') {
-      return NextResponse.json({
-        success: true,
-        role: 'PENDING_USER',
-        username: user.username,
-        name: user.name,
-        redirectUrl: '/dashboard',
-        message: `Welcome ${user.name}! Your SPL Investment Application is currently PENDING verification.`
-      });
-    } else {
-      return NextResponse.json({
-        success: true,
-        role: 'USER',
-        username: user.username,
-        name: user.name,
-        redirectUrl: '/dashboard',
-        message: `Welcome back, ${user.name}! Opening your User Dashboard...`
-      });
     }
+
+    // Block pending or unapproved applications from logging in
+    if (user.role === 'PENDING_USER' || (user.appStatus && user.appStatus !== 'APPROVED')) {
+      if (user.appStatus === 'REJECTED') {
+        return NextResponse.json(
+          { success: false, message: 'Login failed: Your application has been rejected by the admin panel.' },
+          { status: 403 }
+        );
+      }
+      return NextResponse.json(
+        { success: false, message: 'Login failed: Your application is currently pending admin approval. You can only log in once an admin approves your application.' },
+        { status: 403 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      role: 'USER',
+      username: user.username,
+      name: user.name,
+      redirectUrl: '/dashboard',
+      message: `Welcome back, ${user.name}! Opening your User Dashboard...`
+    });
   } catch (error) {
     return NextResponse.json(
       { success: false, message: 'Server authentication error.' },

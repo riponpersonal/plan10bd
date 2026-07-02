@@ -17,7 +17,7 @@ export async function POST(request) {
     const newApp = addApplication(body);
     return NextResponse.json({ success: true, application: newApp, message: 'Application submitted successfully.' });
   } catch (err) {
-    return NextResponse.json({ success: false, message: 'Failed to submit application.' }, { status: 500 });
+    return NextResponse.json({ success: false, message: err.message || 'Failed to submit application.' }, { status: 400 });
   }
 }
 
