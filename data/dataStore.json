@@ -38,9 +38,36 @@
       "email": "ripon2@gmail.com",
       "role": "USER",
       "createdAt": "2026-07-02T01:37:59.318Z"
+    },
+    {
+      "id": "usr_1782966452240",
+      "username": "Plan10-104",
+      "phone": "018757562",
+      "password": "ripon",
+      "name": "ripon3",
+      "email": "ripon3@gmail.com",
+      "role": "USER",
+      "createdAt": "2026-07-02T04:27:32.240Z"
     }
   ],
   "applications": [
+    {
+      "id": "APP-2026-004",
+      "applicantName": "ripon3",
+      "nid": "464634613635",
+      "fatherName": "",
+      "phone": "018757562",
+      "password": "ripon",
+      "address": "",
+      "capitalAmount": 0,
+      "durationMonths": 0,
+      "nomineeName": "",
+      "relation": "",
+      "purpose": "Buy Product",
+      "productId": 1,
+      "status": "APPROVED",
+      "submittedAt": "2026-07-02T04:26:57.946Z"
+    },
     {
       "id": "APP-2026-003",
       "applicantName": "ripon2",
@@ -135,13 +162,66 @@
       "nomineeName": "Legal Heir",
       "relation": "Family",
       "referredBy": "Plan10-101"
+    },
+    {
+      "memberId": "Plan10-104",
+      "name": "ripon3",
+      "phone": "018757562",
+      "nid": "464634613635",
+      "capitalInvested": 0,
+      "termMonths": 0,
+      "monthlyProfit": 0,
+      "monthlyCapitalRefund": 0,
+      "monthlyTotalPayout": 0,
+      "joinDate": "2026-07-02",
+      "status": "ACTIVE",
+      "nomineeName": "Legal Heir",
+      "relation": "Family",
+      "referredBy": null
     }
   ],
   "payouts": [],
-  "products": [],
+  "products": [
+    {
+      "id": 1,
+      "name": "Shirt and Pant combo pack",
+      "brand": "Plan10-Cloth",
+      "category": "Cloth",
+      "price": 2500,
+      "description": "",
+      "imageUrl": "/uploads/1782966276942_p3.avif",
+      "imageUrls": [
+        "/uploads/1782966276942_p3.avif"
+      ],
+      "stockStatus": "IN_STOCK"
+    }
+  ],
   "inquiries": [],
-  "categories": [],
+  "categories": [
+    "Cloth"
+  ],
   "logs": [
+    {
+      "id": "log_1782968742067_auw73",
+      "timestamp": "2026-07-02 11:05 AM",
+      "action": "Database JSON Exported",
+      "ipAddress": "::ffff:192.168.56.1",
+      "status": "Success"
+    },
+    {
+      "id": "log_1782965525604_1h696",
+      "timestamp": "2026-07-02 10:12 AM",
+      "action": "Database Restored from JSON Backup",
+      "ipAddress": "::1",
+      "status": "Success"
+    },
+    {
+      "id": "log_1782965525603",
+      "timestamp": "2026-07-02 10:12 AM",
+      "action": "Database Restored from JSON Backup",
+      "ipAddress": "Internal System Process",
+      "status": "Success"
+    },
     {
       "id": "log_1782956935438_mlyas",
       "timestamp": "2026-07-02 07:48 AM",
@@ -190,6 +270,44 @@
       "action": "Factory Reset Executed",
       "ipAddress": "Internal System Process",
       "status": "Success"
+    }
+  ],
+  "orders": [
+    {
+      "id": "ORD_1782968465706_fblqk",
+      "username": "Plan10-104",
+      "productId": 1,
+      "productName": "Shirt and Pant combo pack",
+      "price": 2500,
+      "status": "DELIVERED",
+      "orderedAt": "2026-07-02T05:01:05.706Z"
+    },
+    {
+      "id": "ORD_1782968465662_nlx45",
+      "username": "Plan10-104",
+      "productId": 1,
+      "productName": "Shirt and Pant combo pack",
+      "price": 2500,
+      "status": "REJECTED",
+      "orderedAt": "2026-07-02T05:01:05.662Z"
+    },
+    {
+      "id": "ORD_1782966417946_nxk81",
+      "username": "018757562",
+      "productId": 1,
+      "productName": "Shirt and Pant combo pack",
+      "price": 2500,
+      "status": "DELIVERED",
+      "orderedAt": "2026-07-02T04:26:57.946Z"
+    },
+    {
+      "id": "ORD_1782966305581_5rlie",
+      "username": "admin",
+      "productId": 1,
+      "productName": "Shirt and Pant combo pack",
+      "price": 2500,
+      "status": "DELIVERED",
+      "orderedAt": "2026-07-02T04:25:05.581Z"
     }
   ]
 }

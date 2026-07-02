@@ -19,7 +19,10 @@ export default function AdminDashboardOverview() {
         const dataApps = await resApps.json();
         const dataMembers = await resMembers.json();
 
-        if (dataApps.success) setApps(dataApps.applications);
+        if (dataApps.success) {
+          const splApps = dataApps.applications.filter(a => a.purpose !== 'Buy Product');
+          setApps(splApps);
+        }
         if (dataMembers.success) setMembers(dataMembers.members);
       } catch (e) {
         console.error('Failed to load dashboard data');

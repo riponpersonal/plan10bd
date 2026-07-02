@@ -36,6 +36,36 @@ export default function UserDashboardPage() {
   const handleZoomOut = () => setZoomScale(prev => Math.max(Number((prev - 0.15).toFixed(2)), 0.4));
   const handleResetZoom = () => setZoomScale(1.0);
 
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [selectedTrackingOrderId, setSelectedTrackingOrderId] = useState(null);
+
+  useEffect(() => {
+    async function fetchOrders() {
+      try {
+        let username = 'Plan10-101';
+        const saved = localStorage.getItem('plan10_user');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          username = parsed.username || parsed.phone || 'Plan10-101';
+        }
+        const res = await fetch(`/api/orders?username=${encodeURIComponent(username)}`);
+        const data = await res.json();
+        if (data.success && data.orders) {
+          setOrders(data.orders);
+          if (data.orders.length > 0 && !selectedTrackingOrderId) {
+            setSelectedTrackingOrderId(data.orders[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch orders in dashboard:', err);
+      } finally {
+        setOrdersLoading(false);
+      }
+    }
+    fetchOrders();
+  }, [activeTab]);
+
   useEffect(() => {
     async function fetchDashboard() {
       try {
@@ -212,7 +242,18 @@ export default function UserDashboardPage() {
     );
   }
 
-  const { member, stats, schedule, referrals } = dashData;
+  const { member, schedule, referrals } = dashData;
+  const stats = {
+    capitalInvested: dashData.stats?.capitalInvested || 0,
+    termMonths: dashData.stats?.termMonths || 0,
+    monthlyProfit: dashData.stats?.monthlyProfit || 0,
+    monthlyCapitalRefund: dashData.stats?.monthlyCapitalRefund || 0,
+    monthlyTotalPayout: dashData.stats?.monthlyTotalPayout || 0,
+    totalPaidSoFar: dashData.stats?.totalPaidSoFar || 0,
+    payoutsCompletedCount: dashData.stats?.payoutsCompletedCount || 0,
+    remainingMonths: dashData.stats?.remainingMonths || 0,
+    maturityTotalReturn: dashData.stats?.maturityTotalReturn || 0
+  };
 
   // Helper for rendering recursive Referral Tree Nodes
   const renderTreeNode = (node) => (
@@ -401,6 +442,121 @@ export default function UserDashboardPage() {
   };
 
 
+
+  const renderOrderTracking = () => {
+    if (!selectedTrackingOrderId) return null;
+    const ord = orders.find(o => o.id === selectedTrackingOrderId);
+    if (!ord) return null;
+
+    let step = 1; // 1 = Placed, 2 = Verification, 3 = Dispatch, 4 = Delivered
+    if (ord.status === 'PROCESSING') step = 3;
+    else if (ord.status === 'DELIVERED') step = 4;
+    else if (ord.status === 'REJECTED') step = 2;
+
+    const steps = [
+      { label: 'Order Placed', desc: 'Order received by desk', icon: 'fa-file-invoice-dollar' },
+      { label: 'Verification', desc: ord.status === 'REJECTED' ? 'Declined by Admin' : 'Review & Approval', icon: 'fa-shield-halved' },
+      { label: 'Dispatch & Shipping', desc: 'Package transit', icon: 'fa-truck-fast' },
+      { label: 'Delivered', desc: 'Handed to client', icon: 'fa-circle-check' }
+    ];
+
+    let lineWidth = '0%';
+    if (ord.status === 'PENDING') lineWidth = '33%';
+    else if (ord.status === 'REJECTED') lineWidth = '33%';
+    else if (ord.status === 'PROCESSING') lineWidth = '66%';
+    else if (ord.status === 'DELIVERED') lineWidth = '100%';
+
+    const activeLineStyle = {
+      width: lineWidth,
+      background: ord.status === 'REJECTED' ? '#ef4444' : 'linear-gradient(90deg, #10b981, #2563eb)'
+    };
+
+    return (
+      <div className="content-section-card tracking-card">
+        <div className="tracking-header">
+          <div>
+            <span className="tracking-order-badge">
+              Tracking Order: {ord.id}
+            </span>
+            <h3 style={{ margin: '8px 0 0 0', color: '#ffffff' }}>
+              <i className="fa-solid fa-map-location-dot text-primary" style={{ marginRight: '8px' }}></i> Shipment Progress Tracker
+            </h3>
+          </div>
+          <div className="tracking-est-box">
+            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Est. Delivery:</span>
+            <div style={{ fontWeight: 700, color: '#10b981' }}>Within 3-5 Working Days</div>
+          </div>
+        </div>
+
+        {/* Visual Stepper */}
+        <div className="stepper-wrapper">
+          {/* Progress background line contains active line so overflow:hidden clips correctly */}
+          <div className="stepper-bg-line">
+            <div className="stepper-active-line" style={activeLineStyle}></div>
+          </div>
+
+          <div className="stepper-steps">
+            {steps.map((s, idx) => {
+              const currentIdx = idx + 1;
+              let isCompleted = currentIdx < step;
+              let isActive = currentIdx === step && ord.status !== 'REJECTED';
+              let isFailed = currentIdx === 2 && ord.status === 'REJECTED';
+              
+              if (ord.status === 'DELIVERED') {
+                isCompleted = true;
+                isActive = false;
+              }
+
+              let statusClass = 'upcoming';
+              if (isCompleted) statusClass = 'completed';
+              else if (isFailed) statusClass = 'failed';
+              else if (isActive) statusClass = 'active';
+
+              return (
+                <div key={idx} className={`step-item ${statusClass}`}>
+                  <div className="step-circle">
+                    {isCompleted ? (
+                      <i className="fa-solid fa-check"></i>
+                    ) : isFailed ? (
+                      <i className="fa-solid fa-xmark"></i>
+                    ) : (
+                      <i className={`fa-solid ${s.icon}`}></i>
+                    )}
+                  </div>
+                  <span className="step-label">
+                    {s.label}
+                  </span>
+                  <span className="step-desc">
+                    {s.desc}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Courier & Destination details */}
+        <div className="tracking-details-grid">
+          <div>
+            <div className="detail-label"><i className="fa-solid fa-truck-ramp-box" style={{ marginRight: '6px' }}></i> Logistics Carrier</div>
+            <strong style={{ color: '#f8fafc' }}>PLAN-10 Express Delivery desk</strong>
+          </div>
+          <div>
+            <div className="detail-label"><i className="fa-solid fa-box" style={{ marginRight: '6px' }}></i> Product Quantity</div>
+            <strong style={{ color: '#f8fafc' }}>1 Unit ({ord.productName})</strong>
+          </div>
+          <div>
+            <div className="detail-label"><i className="fa-solid fa-location-dot" style={{ marginRight: '6px' }}></i> Ship-To Address</div>
+            <strong style={{ color: '#f8fafc' }}>{member.address || 'Member Residence / Gazipur Center'}</strong>
+          </div>
+          <div>
+            <div className="detail-label"><i className="fa-solid fa-receipt" style={{ marginRight: '6px' }}></i> Payment Method</div>
+            <strong style={{ color: '#10b981' }}>Cash on Delivery (COD)</strong>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -1030,6 +1186,165 @@ export default function UserDashboardPage() {
               </div>
             </form>
           )}
+        </div>
+      )}
+
+      {/* TAB 5: ORDERS & NOTIFICATIONS */}
+      {activeTab === 'orders' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Notifications / Alerts Section */}
+          <div className="content-section-card">
+            <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <i className="fa-solid fa-bell text-warning"></i> Recent Alerts & Notifications
+            </h3>
+            {orders.length === 0 ? (
+              <p style={{ margin: 0, color: '#64748b', fontSize: '0.9rem' }}>No new notifications.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {orders.map((ord) => {
+                  let alertBg = 'rgba(217, 119, 6, 0.08)';
+                  let alertBorder = 'rgba(217, 119, 6, 0.2)';
+                  let alertIcon = 'fa-hourglass-half text-warning';
+                  let alertText = `Order ${ord.id} for "${ord.productName}" is currently pending admin acceptance and review.`;
+
+                  if (ord.status === 'PROCESSING') {
+                    alertBg = 'rgba(37, 99, 235, 0.08)';
+                    alertBorder = 'rgba(37, 99, 235, 0.2)';
+                    alertIcon = 'fa-truck-fast text-primary';
+                    alertText = `Great news! Your order ${ord.id} for "${ord.productName}" has been accepted and is currently in processing.`;
+                  } else if (ord.status === 'DELIVERED') {
+                    alertBg = 'rgba(16, 185, 129, 0.08)';
+                    alertBorder = 'rgba(16, 185, 129, 0.2)';
+                    alertIcon = 'fa-circle-check text-success';
+                    alertText = `Success! Your order ${ord.id} for "${ord.productName}" has been confirmed as delivered.`;
+                  } else if (ord.status === 'REJECTED') {
+                    alertBg = 'rgba(239, 68, 68, 0.08)';
+                    alertBorder = 'rgba(239, 68, 68, 0.2)';
+                    alertIcon = 'fa-triangle-exclamation text-danger';
+                    alertText = `Notice: Your order ${ord.id} for "${ord.productName}" was declined by the admin panel. Please check with support.`;
+                  }
+
+                  return (
+                    <div 
+                      key={ord.id} 
+                      style={{
+                        background: alertBg,
+                        border: `1px solid ${alertBorder}`,
+                        borderRadius: '8px',
+                        padding: '12px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        fontSize: '0.88rem',
+                        color: '#f8fafc',
+                        lineHeight: '1.4'
+                      }}
+                    >
+                      <i className={`fa-solid ${alertIcon}`} style={{ fontSize: '1.2rem' }}></i>
+                      <span>{alertText}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Visual Tracking Timeline Stepper */}
+          {renderOrderTracking()}
+
+          {/* Orders History Section */}
+          <div className="content-section-card">
+            <div className="section-card-header" style={{ marginBottom: '20px' }}>
+              <div>
+                <h3 style={{ margin: 0 }}><i className="fa-solid fa-cart-flatbed"></i> My Product Orders</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                  Track your product purchases and delivery processing status.
+                </p>
+              </div>
+            </div>
+
+            {ordersLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
+                <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '1.8rem', marginBottom: '8px' }}></i>
+                <p style={{ margin: 0 }}>Loading orders...</p>
+              </div>
+            ) : orders.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8', background: '#0f172a', borderRadius: '8px', border: '1px solid #334155' }}>
+                <i className="fa-solid fa-cart-shopping" style={{ fontSize: '2.5rem', color: '#475569', marginBottom: '12px', display: 'block' }}></i>
+                <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#f1f5f9' }}>No orders found</p>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem' }}>Go to the homepage product gallery to place your order.</p>
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="payout-schedule-table">
+                  <thead>
+                    <tr>
+                      <th>Order ID</th>
+                      <th>Date</th>
+                      <th>Product Name</th>
+                      <th>Price</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.map((ord) => {
+                      let badgeBg = '#d97706';
+                      let statusText = 'Pending';
+                      if (ord.status === 'PROCESSING') {
+                        badgeBg = '#2563eb';
+                        statusText = 'Processing';
+                      } else if (ord.status === 'DELIVERED') {
+                        badgeBg = '#059669';
+                        statusText = 'Delivered';
+                      } else if (ord.status === 'REJECTED') {
+                        badgeBg = '#ef4444';
+                        statusText = 'Rejected';
+                      }
+
+                      const isSelected = ord.id === selectedTrackingOrderId;
+
+                      return (
+                        <tr 
+                          key={ord.id} 
+                          onClick={() => setSelectedTrackingOrderId(ord.id)}
+                          style={{
+                            cursor: 'pointer',
+                            backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                            borderLeft: isSelected ? '4px solid #2563eb' : 'none',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <td style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#38bdf8' }}>
+                            {isSelected && <i className="fa-solid fa-chevron-right text-primary" style={{ marginRight: '6px', fontSize: '0.75rem' }}></i>}
+                            {ord.id}
+                          </td>
+                          <td>{ord.orderedAt ? new Date(ord.orderedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}</td>
+                          <td style={{ fontWeight: 600 }}>{ord.productName}</td>
+                          <td style={{ fontWeight: 800, color: '#10b981' }}>৳{Math.round(ord.price).toLocaleString()}</td>
+                          <td>
+                            <span 
+                              style={{
+                                display: 'inline-block',
+                                padding: '4px 10px',
+                                borderRadius: '20px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                backgroundColor: badgeBg,
+                                color: '#ffffff',
+                                textTransform: 'uppercase'
+                              }}
+                            >
+                              {statusText}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

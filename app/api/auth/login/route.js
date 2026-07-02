@@ -37,13 +37,21 @@ export async function POST(request) {
     // Block pending or unapproved applications from logging in
     if (user.role === 'PENDING_USER' || (user.appStatus && user.appStatus !== 'APPROVED')) {
       if (user.appStatus === 'REJECTED') {
+        const rejectMsg = user.appPurpose === 'Buy Product'
+          ? 'Login failed: Your account registration was rejected because your product order was declined.'
+          : 'Login failed: Your application has been rejected by the admin panel.';
         return NextResponse.json(
-          { success: false, message: 'Login failed: Your application has been rejected by the admin panel.' },
+          { success: false, message: rejectMsg },
           { status: 403 }
         );
       }
+
+      const pendingMsg = user.appPurpose === 'Buy Product'
+        ? 'Login failed: Your account is pending admin approval. You will be able to log in once the admin accepts your product order.'
+        : 'Login failed: Your application is currently pending admin approval. You can only log in once an admin approves your application.';
+
       return NextResponse.json(
-        { success: false, message: 'Login failed: Your application is currently pending admin approval. You can only log in once an admin approves your application.' },
+        { success: false, message: pendingMsg },
         { status: 403 }
       );
     }

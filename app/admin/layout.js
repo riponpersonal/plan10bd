@@ -8,6 +8,7 @@ import './admin.css';
 export default function AdminLayout({ children }) {
   const pathname = usePathname();
   const [pendingBadge, setPendingBadge] = useState(0);
+  const [pendingOrdersBadge, setPendingOrdersBadge] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
@@ -17,11 +18,18 @@ export default function AdminLayout({ children }) {
       const res = await fetch('/api/applications');
       const data = await res.json();
       if (data.success && data.applications) {
-        const pending = data.applications.filter((a) => a.status === 'PENDING').length;
+        const pending = data.applications.filter((a) => a.status === 'PENDING' && a.purpose !== 'Buy Product').length;
         setPendingBadge(pending);
       }
+
+      const ordersRes = await fetch('/api/orders');
+      const ordersData = await ordersRes.json();
+      if (ordersData.success && ordersData.orders) {
+        const pendingOrders = ordersData.orders.filter((o) => o.status === 'PENDING').length;
+        setPendingOrdersBadge(pendingOrders);
+      }
     } catch (e) {
-      console.error('Failed to fetch pending applications count', e);
+      console.error('Failed to fetch counts', e);
     }
   }
 
@@ -75,6 +83,7 @@ export default function AdminLayout({ children }) {
     { label: 'Referral Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
     { label: 'Monthly Payouts', href: '/admin/payouts', icon: 'fa-hand-holding-dollar' },
     { label: 'Products & Sectors', href: '/admin/products', icon: 'fa-boxes-packing' },
+    { label: 'Product Orders', href: '/admin/orders', icon: 'fa-cart-flatbed', badge: pendingOrdersBadge },
     { label: 'Inquiries & Leads', href: '/admin/inquiries', icon: 'fa-envelope-open-text' }
   ];
 

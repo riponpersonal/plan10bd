@@ -555,6 +555,43 @@
   background: #0f172a;
 }
 
+/* Orders history table (reuses dash-table look) */
+.payout-schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  min-width: 520px; /* forces horizontal scroll on narrow screens */
+}
+
+.payout-schedule-table th {
+  background: #0f172a;
+  color: var(--dash-text-muted);
+  font-weight: 700;
+  text-align: left;
+  padding: 11px 14px;
+  border-bottom: 2px solid var(--dash-border);
+  text-transform: uppercase;
+  font-size: 0.73rem;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.payout-schedule-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--dash-border);
+  color: #f8fafc;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.payout-schedule-table tr:hover td {
+  background: #0f172a;
+}
+
+.payout-schedule-table tbody tr {
+  transition: background 0.15s ease;
+}
+
 .status-badge {
   padding: 4px 10px;
   border-radius: 20px;
@@ -777,5 +814,198 @@
     border-top: 1px dashed #334155;
     padding-top: 8px;
     margin-top: 4px;
+  }
+}
+
+/* Tracking Progress Card & Stepper */
+.tracking-card {
+  padding: 24px;
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.tracking-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+  border-bottom: 1px solid var(--dash-border);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+
+.tracking-order-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: #1e293b;
+  border: 1px solid #475569;
+  color: #38bdf8;
+  padding: 4px 10px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tracking-est-box {
+  text-align: right;
+}
+
+.stepper-wrapper {
+  position: relative;
+  margin: 40px 0;
+  padding: 0 10px;
+}
+
+.stepper-bg-line {
+  position: absolute;
+  top: 22px;
+  left: 12%;
+  right: 12%;
+  height: 4px;
+  background: #1e293b;
+  z-index: 1;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.stepper-active-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #2563eb);
+  z-index: 1;
+  border-radius: inherit;
+  transition: width 0.4s ease;
+}
+
+.stepper-steps {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  z-index: 2;
+}
+
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 22%;
+  text-align: center;
+}
+
+.step-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #0f172a;
+  border: 3px solid #334155;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.3s ease;
+}
+
+.step-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #64748b;
+  margin-top: 12px;
+}
+
+.step-desc {
+  display: block;
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin-top: 4px;
+  max-width: 100px;
+}
+
+/* Step status modifiers */
+.step-item.completed .step-circle {
+  background: #059669;
+  border-color: #10b981;
+  color: #ffffff;
+}
+.step-item.completed .step-label {
+  color: #ffffff;
+}
+
+.step-item.failed .step-circle {
+  background: #7f1d1d;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+.step-item.failed .step-label {
+  color: #fca5a5;
+}
+.step-item.failed .step-desc {
+  color: #fca5a5;
+}
+
+.step-item.active .step-circle {
+  background: #1e293b;
+  border-color: #2563eb;
+  color: #38bdf8;
+  box-shadow: 0 0 15px rgba(37, 99, 235, 0.4);
+}
+.step-item.active .step-label {
+  color: #ffffff;
+}
+
+.tracking-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  background: #0f172a;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  font-size: 0.82rem;
+}
+
+.detail-label {
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+/* Stepper Responsiveness */
+@media (max-width: 600px) {
+  .tracking-card {
+    padding: 16px;
+  }
+  
+  .tracking-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .tracking-est-box {
+    text-align: left;
+  }
+  
+  .step-circle {
+    width: 36px;
+    height: 36px;
+    font-size: 0.95rem;
+    border-width: 2px;
+  }
+  
+  .step-label {
+    font-size: 0.68rem;
+    margin-top: 8px;
+  }
+  
+  .step-desc {
+    display: none; /* Hide descriptions to avoid crowding */
+  }
+  
+  .stepper-bg-line {
+    top: 18px;
   }
 }

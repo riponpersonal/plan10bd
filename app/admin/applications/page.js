@@ -16,7 +16,10 @@ export default function AdminApplicationsPage() {
     try {
       const res = await fetch('/api/applications');
       const data = await res.json();
-      if (data.success) setApps(data.applications);
+      if (data.success) {
+        const splApps = data.applications.filter(a => a.purpose !== 'Buy Product');
+        setApps(splApps);
+      }
     } catch (err) {
       console.error('Error fetching applications');
     } finally {

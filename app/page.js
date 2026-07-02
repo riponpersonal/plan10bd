@@ -82,6 +82,11 @@ export default function Home() {
   const [inquiryTopic, setInquiryTopic] = useState('Investment');
   const [inquiryMessage, setInquiryMessage] = useState('');
 
+  // 5. Product Orders State
+  const [userOrders, setUserOrders] = useState([]);
+  const [selectedProductId, setSelectedProductId] = useState(null);
+  const [appPurpose, setAppPurpose] = useState('Investment');
+
   const showToast = (message, type = 'info') => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, message, type }]);
@@ -105,6 +110,25 @@ export default function Home() {
     fetchProducts();
   }, []);
 
+  useEffect(() => {
+    async function fetchUserOrders() {
+      if (!currentUser) {
+        setUserOrders([]);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/orders?username=${encodeURIComponent(currentUser.username || currentUser.phone || '')}`);
+        const data = await res.json();
+        if (data.success && data.orders) {
+          setUserOrders(data.orders);
+        }
+      } catch (err) {
+        console.error('Failed to fetch user orders:', err);
+      }
+    }
+    fetchUserOrders();
+  }, [currentUser]);
+
   const handleOrderInquiry = (product) => {
     setInquiryTopic('Products');
     setInquiryMessage(`I would like to place an order / make an inquiry for the PLAN-10 product:\n\n- Product Name: ${product.name}\n- Brand: ${product.brand}\n- Price: ৳ ${product.price.toLocaleString()} BDT\n\nPlease let me know the distributor availability, wholesale discounts, and secure payment procedures.`);
@@ -114,6 +138,45 @@ export default function Home() {
       contactSection.scrollIntoView({ behavior: 'smooth' });
     }
     showToast(`Pre-filled inquiry form for: ${product.name}! Scroll down to review.`, 'info');
+  };
+
+  const handleOrderNow = async (product) => {
+    if (!currentUser) {
+      setSelectedProductId(product.id);
+      setIsLoginModalOpen(true);
+      showToast('Please sign in or create an account to purchase products.', 'info');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUser.username || currentUser.phone || '',
+          productId: product.id
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Your product order was placed successfully and is pending admin review!', 'success');
+        const freshRes = await fetch(`/api/orders?username=${encodeURIComponent(currentUser.username || currentUser.phone || '')}`);
+        const freshData = await freshRes.json();
+        if (freshData.success && freshData.orders) {
+          setUserOrders(freshData.orders);
+        }
+      } else {
+        showToast(data.message || 'Failed to place order.', 'error');
+      }
+    } catch (err) {
+      showToast('Error placing order. Please try again.', 'error');
+    }
+  };
+
+  const getProductOrderStatus = (productId) => {
+    if (!currentUser) return null;
+    const order = userOrders.find(o => o.productId === productId);
+    return order ? order.status : null;
   };
 
   // Restore login session from localStorage
@@ -755,28 +818,35 @@ export default function Home() {
                         <strong style={{ fontSize: '1.1rem', color: '#10b981', fontWeight: 800 }}>৳{Math.round(p.price).toLocaleString('en-IN')}</strong>
                       </div>
                       
-                      <button 
-                        onClick={() => handleOrderInquiry(p)}
-                        disabled={p.stockStatus !== 'IN_STOCK'}
-                        className="btn" 
-                        style={{
-                          padding: '6px 12px',
-                          fontSize: '0.78rem',
-                          fontWeight: 700,
-                          backgroundColor: p.stockStatus === 'IN_STOCK' ? '#10b981' : '#334155',
-                          color: p.stockStatus === 'IN_STOCK' ? '#ffffff' : '#64748b',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: p.stockStatus === 'IN_STOCK' ? 'pointer' : 'not-allowed',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          margin: 0,
-                          transition: 'all 0.2s ease'
-                        }}
-                      >
-                        <i className="fa-solid fa-cart-shopping"></i> {p.stockStatus === 'IN_STOCK' ? 'Order Now' : 'Sold Out'}
-                      </button>
+                      {(() => {
+                        const isOutOfStock = p.stockStatus !== 'IN_STOCK';
+
+                        return (
+                          <button
+                            onClick={() => handleOrderNow(p)}
+                            disabled={isOutOfStock}
+                            className="btn"
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              backgroundColor: isOutOfStock ? '#334155' : '#10b981',
+                              color: isOutOfStock ? '#64748b' : '#ffffff',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              margin: 0,
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <i className={`fa-solid ${isOutOfStock ? 'fa-ban' : 'fa-cart-shopping'}`}></i>
+                            {isOutOfStock ? 'Sold Out' : 'Order Now'}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -1247,17 +1317,22 @@ export default function Home() {
                     phone: appPhone,
                     password: appPassword,
                     address: appAddress,
-                    capitalAmount: Number(investAmount),
-                    durationMonths: Number(investDuration),
+                    capitalAmount: appPurpose === 'Investment' ? Number(investAmount) : 0,
+                    durationMonths: appPurpose === 'Investment' ? Number(investDuration) : 0,
                     nomineeName: appNomineeName,
-                    relation: appRelation
+                    relation: appRelation,
+                    purpose: appPurpose,
+                    productId: appPurpose === 'Buy Product' ? selectedProductId : null
                   })
                 });
                 const data = await res.json();
                 setIsSubmittingApp(false);
                 if (data.success) {
                   setIsFormModalOpen(false);
-                  showToast('SPL Application submitted successfully! Our Gazipur desk will verify your details.', 'success');
+                  const successMsg = appPurpose === 'Buy Product'
+                    ? 'Account created and product order placed successfully! Your account will be active once the admin accepts your order.'
+                    : 'SPL Application submitted successfully! Our Gazipur desk will verify your details.';
+                  showToast(successMsg, 'success');
                   // Reset form
                   setAppApplicantName('');
                   setAppNid('');
@@ -1267,6 +1342,7 @@ export default function Home() {
                   setAppAddress('');
                   setAppNomineeName('');
                   setAppRelation('');
+                  setAppPurpose('Investment');
                 } else {
                   showToast(data.message || 'Failed to submit application.', 'error');
                 }
@@ -1276,6 +1352,19 @@ export default function Home() {
               }
             }}>
               <div className="form-section-title">1. Applicant Details (আবেদনকারীর তথ্য)</div>
+              <div className="form-group mb-3" style={{ padding: '0 15px' }}>
+                <label style={{ fontWeight: 'bold', color: '#10b981' }}>Account Type / Purpose (নিবন্ধনের উদ্দেশ্য) *</label>
+                <select
+                  className="form-control"
+                  style={{ background: '#1e293b', color: '#fff', border: '1px solid #475569', borderRadius: '8px', padding: '10px' }}
+                  value={appPurpose}
+                  onChange={(e) => setAppPurpose(e.target.value)}
+                  required
+                >
+                  <option value="Investment">Investment Account (বিনিয়োগকারী একাউন্ট)</option>
+                  <option value="Buy Product">Product Buyer Account (পণ্য ক্রেতা একাউন্ট)</option>
+                </select>
+              </div>
               <div className="form-row">
                 <div className="form-group col-6">
                   <label>Applicant Name (আবেদনকারীর নাম) *</label>
@@ -1349,32 +1438,36 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="form-section-title mt-4">2. Investment Scheme Details (বিনিয়োগের পরিমাণ ও বিবরণ)</div>
-              <div className="form-row">
-                <div className="form-group col-6">
-                  <label>Investment Capital Amount (বিনিয়োগের পরিমাণ ৳) *</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={investAmount}
-                    onChange={(e) => setInvestAmount(Number(e.target.value))}
-                    step="10000"
-                    min="10000"
-                    required
-                  />
-                </div>
-                <div className="form-group col-6">
-                  <label>Term Duration (মেয়াদ)</label>
-                  <input type="text" className="form-control" value={`${investDuration} Months (${investDuration} মাস)`} readOnly />
-                </div>
-              </div>
+              {appPurpose === 'Investment' && (
+                <>
+                  <div className="form-section-title mt-4">2. Investment Scheme Details (বিনিয়োগের পরিমাণ ও বিবরণ)</div>
+                  <div className="form-row">
+                    <div className="form-group col-6">
+                      <label>Investment Capital Amount (বিনিয়োগের পরিমাণ ৳) *</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={investAmount}
+                        onChange={(e) => setInvestAmount(Number(e.target.value))}
+                        step="10000"
+                        min="10000"
+                        required
+                      />
+                    </div>
+                    <div className="form-group col-6">
+                      <label>Term Duration (মেয়াদ)</label>
+                      <input type="text" className="form-control" value={`${investDuration} Months (${investDuration} মাস)`} readOnly />
+                    </div>
+                  </div>
 
-              <div className="summary-box-modal bg-light p-3 rounded mb-3">
-                <div className="form-row">
-                  <div className="col-6"><strong>Estimated Monthly Profit:</strong> <span className="text-success">{formatBDT(monthlyProfit)}</span></div>
-                  <div className="col-6"><strong>Estimated Monthly Refund:</strong> <span className="text-info">{formatBDT(monthlyCapital)}</span></div>
-                </div>
-              </div>
+                  <div className="summary-box-modal bg-light p-3 rounded mb-3">
+                    <div className="form-row">
+                      <div className="col-6"><strong>Estimated Monthly Profit:</strong> <span className="text-success">{formatBDT(monthlyProfit)}</span></div>
+                      <div className="col-6"><strong>Estimated Monthly Refund:</strong> <span className="text-info">{formatBDT(monthlyCapital)}</span></div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="form-section-title mt-4">3. Nominee Information (নমিনীর তথ্য)</div>
               <div className="form-row">
@@ -1483,6 +1576,10 @@ export default function Home() {
                 <i className={`fa-solid ${isLoggingIn ? 'fa-spinner fa-spin' : 'fa-right-to-bracket'}`}></i>{' '}
                 {isLoggingIn ? 'Authenticating...' : 'Sign In to Portal'}
               </button>
+              <p style={{ marginTop: '16px', fontSize: '0.85rem', textAlign: 'center', color: '#94a3b8' }}>
+                Don't have an account?{' '}
+                <a href="#" onClick={(e) => { e.preventDefault(); setIsLoginModalOpen(false); setIsFormModalOpen(true); }} style={{ color: '#10b981', fontWeight: 600 }}>Create Account / Apply Now</a>
+              </p>
             </form>
           </div>
         </div>

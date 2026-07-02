@@ -24,7 +24,8 @@ const initialDataStore = {
   products: [],
   inquiries: [],
   categories: [],
-  logs: []
+  logs: [],
+  orders: []
 };
 
 function saveDataStoreToFile(data) {
@@ -65,6 +66,10 @@ function loadDataStoreFromFile() {
       // Migrate/Initialize categories if needed
       if (!parsed.categories || !Array.isArray(parsed.categories)) {
         parsed.categories = [];
+      }
+      // Migrate/Initialize orders if needed
+      if (!parsed.orders || !Array.isArray(parsed.orders)) {
+        parsed.orders = [];
       }
       return parsed;
     }
@@ -113,7 +118,8 @@ export function findUserByCredentials(username, password) {
           return {
             ...u,
             role: 'PENDING_USER',
-            appStatus: app.status
+            appStatus: app.status,
+            appPurpose: app.purpose || 'Investment'
           };
         }
       }
@@ -132,7 +138,8 @@ export function findUserByCredentials(username, password) {
         phone: app.phone,
         name: app.applicantName,
         role: app.status === 'APPROVED' ? 'USER' : 'PENDING_USER',
-        appStatus: app.status
+        appStatus: app.status,
+        appPurpose: app.purpose || 'Investment'
       };
     }
   }
@@ -193,11 +200,11 @@ export function getUserDashboardData(identifier) {
     name: appObj.applicantName,
     phone: appObj.phone,
     nid: appObj.nid || '19922691234567891',
-    capitalInvested: appObj.capitalAmount || 100000,
-    termMonths: appObj.durationMonths || 33,
-    monthlyProfit: (appObj.capitalAmount / 100000) * 3000 || 3000,
-    monthlyCapitalRefund: Math.round((appObj.capitalAmount || 100000) / (appObj.durationMonths || 33)),
-    monthlyTotalPayout: ((appObj.capitalAmount / 100000) * 3000 || 3000) + Math.round((appObj.capitalAmount || 100000) / (appObj.durationMonths || 33)),
+    capitalInvested: appObj.capitalAmount || 0,
+    termMonths: appObj.durationMonths || 0,
+    monthlyProfit: appObj.capitalAmount ? (appObj.capitalAmount / 100000) * 3000 : 0,
+    monthlyCapitalRefund: appObj.durationMonths ? Math.round((appObj.capitalAmount || 0) / appObj.durationMonths) : 0,
+    monthlyTotalPayout: (appObj.capitalAmount ? (appObj.capitalAmount / 100000) * 3000 : 0) + (appObj.durationMonths ? Math.round((appObj.capitalAmount || 0) / appObj.durationMonths) : 0),
     joinDate: appObj.submittedAt ? appObj.submittedAt.split('T')[0] : new Date().toISOString().split('T')[0],
     status: appObj.status === 'APPROVED' ? 'ACTIVE' : 'PENDING',
     nomineeName: appObj ? appObj.nomineeName || 'Nominee Pending' : 'Nominee Pending',
@@ -381,6 +388,21 @@ export function addApplication(appData) {
     submittedAt: new Date().toISOString()
   };
   dataStore.applications.unshift(newApp);
+
+  // If this is a product buyer registration, automatically place the order!
+  if (appData.purpose === 'Buy Product' && appData.productId) {
+    const product = dataStore.products.find(p => p.id === Number(appData.productId));
+    const productName = product ? product.name : 'PLAN-10 Product';
+    const price = product ? product.price : 0;
+    
+    addOrder({
+      username: appData.phone,
+      productId: appData.productId,
+      productName: productName,
+      price: price
+    });
+  }
+
   saveDataStoreToFile(dataStore);
   return newApp;
 }
@@ -391,15 +413,15 @@ export function updateApplicationStatus(id, status) {
     app.status = status;
     if (status === 'APPROVED') {
       const memberId = `Plan10-${100 + dataStore.members.length + 1}`;
-      const monthlyProfit = (app.capitalAmount / 100000) * 3000;
-      const monthlyCapitalRefund = Math.round(app.capitalAmount / app.durationMonths);
+      const monthlyProfit = app.capitalAmount ? (app.capitalAmount / 100000) * 3000 : 0;
+      const monthlyCapitalRefund = app.durationMonths ? Math.round((app.capitalAmount || 0) / app.durationMonths) : 0;
       const newMember = {
         memberId,
         name: app.applicantName,
         phone: app.phone,
         nid: app.nid,
-        capitalInvested: app.capitalAmount,
-        termMonths: app.durationMonths,
+        capitalInvested: app.capitalAmount || 0,
+        termMonths: app.durationMonths || 0,
         monthlyProfit,
         monthlyCapitalRefund,
         monthlyTotalPayout: monthlyProfit + monthlyCapitalRefund,
@@ -792,6 +814,7 @@ export function resetDataStore() {
   dataStore.products = [];
   dataStore.inquiries = [];
   dataStore.categories = [];
+  dataStore.orders = [];
 
 
   // Initialize fresh logs array with the factory reset action logged
@@ -836,6 +859,7 @@ export function importDataStore(newData) {
   dataStore.products = newData.products || [];
   dataStore.inquiries = newData.inquiries || [];
   dataStore.categories = newData.categories || [];
+  dataStore.orders = newData.orders || [];
 
   // Restore existing logs or initialize
   dataStore.logs = newData.logs || [];
@@ -895,5 +919,58 @@ export function addSystemLog(action, ipAddress = 'Internal System Process', stat
 
 export function getSystemLogs() {
   return dataStore.logs || [];
+}
+
+export function getOrders() {
+  if (!dataStore.orders) {
+    dataStore.orders = [];
+  }
+  return dataStore.orders;
+}
+
+export function addOrder(orderData) {
+  if (!dataStore.orders) {
+    dataStore.orders = [];
+  }
+  const newOrder = {
+    id: `ORD_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    username: orderData.username,
+    productId: Number(orderData.productId),
+    productName: orderData.productName,
+    price: Number(orderData.price),
+    status: 'PENDING',
+    orderedAt: new Date().toISOString()
+  };
+  dataStore.orders.unshift(newOrder);
+  saveDataStoreToFile(dataStore);
+  return newOrder;
+}
+
+export function updateOrderStatus(orderId, status) {
+  if (!dataStore.orders) {
+    dataStore.orders = [];
+  }
+  const order = dataStore.orders.find(o => o.id === orderId);
+  if (order) {
+    order.status = status;
+    
+    // Automatically approve/reject first-time buyer accounts upon order action
+    if (status === 'PROCESSING' || status === 'DELIVERED') {
+      const app = dataStore.applications.find(a => a.phone === order.username && a.status === 'PENDING');
+      if (app) {
+        updateApplicationStatus(app.id, 'APPROVED');
+      }
+    }
+    
+    if (status === 'REJECTED') {
+      const app = dataStore.applications.find(a => a.phone === order.username && a.status === 'PENDING');
+      if (app) {
+        updateApplicationStatus(app.id, 'REJECTED');
+      }
+    }
+    
+    saveDataStoreToFile(dataStore);
+  }
+  return order;
 }
 

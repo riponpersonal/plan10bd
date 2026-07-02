@@ -102,6 +102,14 @@ export default function DashboardLayout({ children }) {
                     </button>
 
                     <button 
+                      className={`nav-popover-item ${activeTab === 'orders' ? 'active' : ''}`} 
+                      onClick={() => { setActiveTab('orders'); setShowNavDropdown(false); }}
+                    >
+                      <i className="fa-solid fa-cart-shopping"></i>
+                      <span>My Orders & Alerts</span>
+                    </button>
+
+                    <button 
                       className={`nav-popover-item ${activeTab === 'account' ? 'active' : ''}`} 
                       onClick={() => { setActiveTab('account'); setShowNavDropdown(false); }}
                     >
@@ -146,6 +154,16 @@ export default function DashboardLayout({ children }) {
                   </div>
 
                   <div className="popover-actions-body">
+                    <button 
+                      className="popover-action-item"
+                      onClick={() => {
+                        setActiveTab('orders');
+                        setShowProfileModal(false);
+                      }}
+                    >
+                      <i className="fa-solid fa-cart-shopping" style={{ color: '#10b981' }}></i> My Orders & Alerts
+                    </button>
+
                     <button 
                       className="popover-action-item"
                       onClick={() => {
