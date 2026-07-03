@@ -188,10 +188,23 @@
       "brand": "Plan10-Cloth",
       "category": "Cloth",
       "price": 2500,
-      "description": "",
+      "description": "Shirt and Pant combo pack - Premium quality consumer product designed for maximum user satisfaction.",
       "imageUrl": "/uploads/1782966276942_p3.avif",
       "imageUrls": [
         "/uploads/1782966276942_p3.avif"
+      ],
+      "stockStatus": "IN_STOCK"
+    },
+    {
+      "id": 2,
+      "name": "lungi",
+      "brand": "Plan10-Cloth",
+      "category": "Cloth",
+      "price": 2500,
+      "description": "",
+      "imageUrl": "/uploads/1783071342760_41TD3G7Rs_L.jpg",
+      "imageUrls": [
+        "/uploads/1783071342760_41TD3G7Rs_L.jpg"
       ],
       "stockStatus": "IN_STOCK"
     }
@@ -273,6 +286,15 @@
     }
   ],
   "orders": [
+    {
+      "id": "ORD_1783071390965_uc9ph",
+      "username": "Plan10-104",
+      "productId": 2,
+      "productName": "lungi",
+      "price": 2500,
+      "status": "DELIVERED",
+      "orderedAt": "2026-07-03T09:36:30.965Z"
+    },
     {
       "id": "ORD_1782968465706_fblqk",
       "username": "Plan10-104",

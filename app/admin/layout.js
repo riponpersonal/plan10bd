@@ -81,6 +81,7 @@ export default function AdminLayout({ children }) {
     { label: 'SPL Applications', href: '/admin/applications', icon: 'fa-file-contract', badge: pendingBadge },
     { label: 'Active Members', href: '/admin/members', icon: 'fa-users' },
     { label: 'Referral Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
+    { label: 'Products Selling Tree', href: '/admin/products-tree', icon: 'fa-diagram-project' },
     { label: 'Monthly Payouts', href: '/admin/payouts', icon: 'fa-hand-holding-dollar' },
     { label: 'Products & Sectors', href: '/admin/products', icon: 'fa-boxes-packing' },
     { label: 'Product Orders', href: '/admin/orders', icon: 'fa-cart-flatbed', badge: pendingOrdersBadge },
