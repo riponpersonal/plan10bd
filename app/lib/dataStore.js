@@ -2,6 +2,7 @@
 // Handles state persistence for Users, SPL Applications, Members, Payouts, Products, and Inquiries.
 import fs from 'fs';
 import path from 'path';
+import { hashPassword, verifyPassword, needsRehash } from './crypto.js';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'dataStore.json');
@@ -25,7 +26,10 @@ const initialDataStore = {
   inquiries: [],
   categories: [],
   logs: [],
-  orders: []
+  orders: [],
+  wallets: [],
+  withdrawals: [],
+  notifications: []
 };
 
 function saveDataStoreToFile(data) {
@@ -33,7 +37,10 @@ function saveDataStoreToFile(data) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+    // Atomic write: write to .tmp first, then rename — prevents partial-write corruption
+    const tmpFile = DATA_FILE + '.tmp';
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tmpFile, DATA_FILE);
   } catch (err) {
     console.error('Error saving dataStore to file:', err);
   }
@@ -70,6 +77,16 @@ function loadDataStoreFromFile() {
       // Migrate/Initialize orders if needed
       if (!parsed.orders || !Array.isArray(parsed.orders)) {
         parsed.orders = [];
+      }
+      // Initialize wallets, withdrawals, and notifications if needed
+      if (!parsed.wallets || !Array.isArray(parsed.wallets)) {
+        parsed.wallets = [];
+      }
+      if (!parsed.withdrawals || !Array.isArray(parsed.withdrawals)) {
+        parsed.withdrawals = [];
+      }
+      if (!parsed.notifications || !Array.isArray(parsed.notifications)) {
+        parsed.notifications = [];
       }
       return parsed;
     }
@@ -111,7 +128,16 @@ export function findUserByCredentials(username, password) {
   // 1. Search in users array
   for (const u of dataStore.users) {
     const isUserMatch = (u.username && u.username.toLowerCase() === inputClean) || matchPhone(u.phone);
-    if (isUserMatch && u.password === passClean) {
+    if (isUserMatch && verifyPassword(passClean, u.password)) {
+      // Auto-migrate: if password is still plaintext, hash it now silently
+      if (needsRehash(u.password)) {
+        try {
+          u.password = hashPassword(passClean);
+          saveDataStoreToFile(dataStore);
+        } catch (e) {
+          console.error('Auto-migration hashing failed:', e);
+        }
+      }
       if (u.role !== 'ADMIN') {
         const app = dataStore.applications.find(a => matchPhone(a.phone) || (u.phone && matchPhone(u.phone)));
         if (app && app.status !== 'APPROVED') {
@@ -130,8 +156,17 @@ export function findUserByCredentials(username, password) {
   // 2. Search in applications array
   for (const app of dataStore.applications) {
     const isAppPhoneMatch = matchPhone(app.phone);
-    const isPassMatch = app.password && app.password.trim() === passClean;
+    const isPassMatch = app.password && verifyPassword(passClean, app.password);
     if (isAppPhoneMatch && isPassMatch) {
+      // Auto-migrate application password hash
+      if (needsRehash(app.password)) {
+        try {
+          app.password = hashPassword(passClean);
+          saveDataStoreToFile(dataStore);
+        } catch (e) {
+          console.error('Auto-migration hashing failed for app:', e);
+        }
+      }
       return {
         id: `usr_app_${app.id}`,
         username: app.phone,
@@ -145,6 +180,18 @@ export function findUserByCredentials(username, password) {
   }
 
   return null;
+}
+
+/**
+ * Find a user by their ID or username. Used by session verification.
+ * @param {string} idOrUsername
+ * @returns {object|null}
+ */
+export function findUserById(idOrUsername) {
+  if (!idOrUsername) return null;
+  return dataStore.users.find(
+    (u) => u.id === idOrUsername || u.username === idOrUsername
+  ) || null;
 }
 
 export function getUserDashboardData(identifier) {
@@ -303,6 +350,26 @@ export function getUserDashboardData(identifier) {
 
   const tree = buildTreeNodes(level1, 1);
 
+  const ordersList = dataStore.orders ? dataStore.orders.filter(o => o.username === activeMember.phone || o.username === activeMember.memberId) : [];
+  
+  const hasInvested = activeMember && Number(activeMember.capitalInvested) > 0;
+  const hasOrders = ordersList.length > 0;
+  let roleProfile = 'INVESTOR';
+  if (hasInvested && hasOrders) {
+    roleProfile = 'DUAL';
+  } else if (hasInvested) {
+    roleProfile = 'INVESTOR';
+  } else {
+    roleProfile = 'BUYER';
+  }
+
+  const wallet = getWallet(activeMember.memberId || activeMember.phone);
+  const notifications = getNotifications(activeMember.memberId || activeMember.phone);
+  const withdrawals = getWithdrawals(activeMember.memberId || activeMember.phone);
+
+  const buyerBinaryTree = buildBinaryTreeUI(activeMember.memberId, 'buyer');
+  const investorBinaryTree = buildBinaryTreeUI(activeMember.memberId, 'investor');
+
   return {
     user: userObj || {
       id: activeMember.memberId,
@@ -331,7 +398,14 @@ export function getUserDashboardData(identifier) {
       totalTeamVolume,
       totalEarnedBonus,
       tree
-    }
+    },
+    roleProfile,
+    wallet,
+    notifications,
+    withdrawals,
+    orders: ordersList,
+    buyerBinaryTree,
+    investorBinaryTree
   };
 }
 
@@ -433,6 +507,55 @@ export function updateApplicationStatus(id, status) {
       };
       dataStore.members.push(newMember);
 
+      // Binary Tree Placements
+      if (app.purpose === 'Buy Product') {
+        addToBinaryTree('buyer', memberId);
+      } else if (app.purpose === 'Investment') {
+        addToBinaryTree('investor', memberId);
+      }
+
+      // Referral Reward Crediting
+      if (newMember.referredBy) {
+        const cleanRefCode = newMember.referredBy.trim().toLowerCase();
+        const refDigits = cleanRefCode.replace(/\D/g, '');
+        
+        const matchPhone = (phoneStr) => {
+          if (!phoneStr) return false;
+          const pClean = phoneStr.trim().toLowerCase();
+          if (pClean === cleanRefCode) return true;
+          const pDigits = phoneStr.replace(/\D/g, '');
+          if (refDigits.length >= 6 && pDigits.length >= 6) {
+            return pDigits === refDigits || pDigits.endsWith(refDigits) || refDigits.endsWith(pDigits);
+          }
+          return false;
+        };
+
+        let sponsor = dataStore.members.find(m => 
+          (m.memberId && m.memberId.toLowerCase() === cleanRefCode) || matchPhone(m.phone)
+        );
+
+        if (!sponsor) {
+          const sponsorUser = dataStore.users.find(u => 
+            (u.username && u.username.toLowerCase() === cleanRefCode) || matchPhone(u.phone)
+          );
+          if (sponsorUser) {
+            sponsor = { memberId: sponsorUser.username, name: sponsorUser.name };
+          }
+        }
+
+        if (sponsor) {
+          const sponsorId = sponsor.memberId;
+          if (app.purpose === 'Buy Product') {
+            updateWalletBalance(sponsorId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for new Buyer (${newMember.name})`);
+          } else if (app.purpose === 'Investment') {
+            const bonusAmount = (app.capitalAmount || 0) * 0.06;
+            if (bonusAmount > 0) {
+              updateWalletBalance(sponsorId, bonusAmount, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for new Investor (${newMember.name})`);
+            }
+          }
+        }
+      }
+
       const inputDigits = app.phone ? app.phone.replace(/\D/g, '') : '';
       const existingUser = dataStore.users.find(u => {
         if (u.username === memberId) return true;
@@ -444,15 +567,19 @@ export function updateApplicationStatus(id, status) {
       });
 
       if (existingUser) {
-        if (app.password) existingUser.password = app.password;
+        if (app.password) {
+          // Hash the password if it isn't already hashed
+          existingUser.password = needsRehash(app.password) ? hashPassword(app.password) : app.password;
+        }
         if (app.phone) existingUser.phone = app.phone;
         existingUser.role = 'USER';
       } else {
+        const rawPassword = app.password || 'user123';
         const newUser = {
           id: `usr_${Date.now()}`,
           username: memberId,
           phone: app.phone,
-          password: app.password || 'user123',
+          password: needsRehash(rawPassword) ? hashPassword(rawPassword) : rawPassword,
           name: app.applicantName,
           email: app.email || `${app.applicantName.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
           role: 'USER',
@@ -712,11 +839,29 @@ export function bindReferralCode(memberIdentifier, referrerCode) {
   }
 
   targetMember.referredBy = referrerMember.memberId;
+
+  // Process referral commissions post-registration
+  let hasAwarded = false;
+  // If target user is an investor
+  if (targetMember.capitalInvested > 0) {
+    const bonus = targetMember.capitalInvested * 0.06;
+    if (bonus > 0) {
+      updateWalletBalance(referrerMember.memberId, bonus, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for linking Investor (${targetMember.name})`);
+      hasAwarded = true;
+    }
+  }
+  // If target user is a product buyer (has orders or joins via buyer application)
+  const ordersList = dataStore.orders ? dataStore.orders.filter(o => o.username === targetMember.phone || o.username === targetMember.memberId) : [];
+  if (ordersList.length > 0 || targetMember.termMonths === 0) {
+    updateWalletBalance(referrerMember.memberId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for linking Buyer (${targetMember.name})`);
+    hasAwarded = true;
+  }
+
   saveDataStoreToFile(dataStore);
 
   return { 
     success: true, 
-    message: `Successfully linked to sponsor ${referrerMember.name} (${referrerMember.memberId})!`,
+    message: `Successfully linked to sponsor ${referrerMember.name} (${referrerMember.memberId})!${hasAwarded ? ' Referral commission credited.' : ''}`,
     referredBy: referrerMember.memberId
   };
 }
@@ -768,10 +913,35 @@ export function updateProduct(id, productData) {
   return product;
 }
 
+function deleteProductPhotos(product) {
+  if (!product) return;
+  const urls = [];
+  if (product.imageUrl) urls.push(product.imageUrl);
+  if (product.imageUrls && Array.isArray(product.imageUrls)) {
+    product.imageUrls.forEach(url => {
+      if (!urls.includes(url)) urls.push(url);
+    });
+  }
+
+  urls.forEach(url => {
+    if (typeof url === 'string' && url.startsWith('/uploads/')) {
+      try {
+        const filePath = path.join(process.cwd(), 'public', url);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (err) {
+        console.error(`Failed to delete file: ${url}`, err);
+      }
+    }
+  });
+}
+
 export function deleteProduct(id) {
   const index = dataStore.products.findIndex(p => p.id === Number(id));
   if (index !== -1) {
     const deleted = dataStore.products.splice(index, 1)[0];
+    deleteProductPhotos(deleted);
     saveDataStoreToFile(dataStore);
     return deleted;
   }
@@ -798,10 +968,11 @@ export function addCategory(name) {
 // System Database Operations: Reset and Import/Restore with logging support
 export function resetDataStore() {
   // Reset users array to only contain the default primary superadmin account
+  // Password is hashed — default plaintext is 'admin' (auto-migrates on first login)
   dataStore.users = [{
     id: 'usr_admin',
     username: 'admin',
-    password: 'admin',
+    password: hashPassword('admin'),
     name: 'Corporate Executive Admin',
     email: 'admin@plan10bd.com',
     role: 'ADMIN',
@@ -811,10 +982,16 @@ export function resetDataStore() {
   dataStore.applications = [];
   dataStore.members = [];
   dataStore.payouts = [];
+  if (dataStore.products && Array.isArray(dataStore.products)) {
+    dataStore.products.forEach(p => deleteProductPhotos(p));
+  }
   dataStore.products = [];
   dataStore.inquiries = [];
   dataStore.categories = [];
   dataStore.orders = [];
+  dataStore.wallets = [];
+  dataStore.withdrawals = [];
+  dataStore.notifications = [];
 
 
   // Initialize fresh logs array with the factory reset action logged
@@ -860,6 +1037,9 @@ export function importDataStore(newData) {
   dataStore.inquiries = newData.inquiries || [];
   dataStore.categories = newData.categories || [];
   dataStore.orders = newData.orders || [];
+  dataStore.wallets = newData.wallets || [];
+  dataStore.withdrawals = newData.withdrawals || [];
+  dataStore.notifications = newData.notifications || [];
 
   // Restore existing logs or initialize
   dataStore.logs = newData.logs || [];
@@ -942,6 +1122,14 @@ export function addOrder(orderData) {
     orderedAt: new Date().toISOString()
   };
   dataStore.orders.unshift(newOrder);
+  
+  // Add a notification about the new order placement
+  addNotification(
+    newOrder.username,
+    `Your order ${newOrder.id} for "${newOrder.productName}" (৳${Math.round(newOrder.price).toLocaleString()} BDT) has been placed successfully and is pending admin review.`,
+    'ORDER'
+  );
+
   saveDataStoreToFile(dataStore);
   return newOrder;
 }
@@ -954,11 +1142,29 @@ export function updateOrderStatus(orderId, status) {
   if (order) {
     order.status = status;
     
+    // Send a notification alert to the user
+    let msg = `Order ${order.id} status updated to ${status}.`;
+    if (status === 'PROCESSING') {
+      msg = `Great news! Your order ${order.id} for "${order.productName}" is now in processing.`;
+    } else if (status === 'DELIVERED') {
+      msg = `Success! Your order ${order.id} for "${order.productName}" has been delivered.`;
+    } else if (status === 'REJECTED') {
+      msg = `Notice: Your order ${order.id} for "${order.productName}" was rejected.`;
+    } else if (status === 'PENDING') {
+      msg = `Your order ${order.id} for "${order.productName}" is pending admin review.`;
+    }
+    addNotification(order.username, msg, 'ORDER');
+    
     // Automatically approve/reject first-time buyer accounts upon order action
     if (status === 'PROCESSING' || status === 'DELIVERED') {
       const app = dataStore.applications.find(a => a.phone === order.username && a.status === 'PENDING');
       if (app) {
         updateApplicationStatus(app.id, 'APPROVED');
+      } else {
+        const member = dataStore.members.find(m => m.phone === order.username || m.memberId === order.username);
+        if (member) {
+          addToBinaryTree('buyer', member.memberId);
+        }
       }
     }
     
@@ -972,5 +1178,304 @@ export function updateOrderStatus(orderId, status) {
     saveDataStoreToFile(dataStore);
   }
   return order;
+}
+
+export function getWallet(username) {
+  if (!dataStore.wallets) {
+    dataStore.wallets = [];
+  }
+  const cleanId = username ? username.trim().toLowerCase() : '';
+  const member = dataStore.members.find(m => 
+    (m.memberId && m.memberId.toLowerCase() === cleanId) || 
+    (m.phone && m.phone.trim().toLowerCase() === cleanId)
+  );
+  
+  const primaryId = member ? member.memberId : username;
+  let wallet = dataStore.wallets.find(w => w.username === primaryId);
+  
+  if (!wallet) {
+    if (member && member.phone) {
+      wallet = dataStore.wallets.find(w => w.username === member.phone);
+      if (wallet) {
+        wallet.username = primaryId;
+        saveDataStoreToFile(dataStore);
+        return wallet;
+      }
+    }
+
+    wallet = {
+      username: primaryId,
+      balance: 0,
+      transactions: []
+    };
+    dataStore.wallets.push(wallet);
+    saveDataStoreToFile(dataStore);
+  }
+  return wallet;
+}
+
+export function updateWalletBalance(username, amount, type, description) {
+  const wallet = getWallet(username);
+  wallet.balance += Number(amount);
+  if (!wallet.transactions) wallet.transactions = [];
+  wallet.transactions.push({
+    id: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    amount: Number(amount),
+    type,
+    description,
+    date: new Date().toISOString()
+  });
+  saveDataStoreToFile(dataStore);
+  
+  addNotification(username, `Wallet updated: ${amount > 0 ? '+' : ''}৳${amount} - ${description}`, 'WALLET');
+  return wallet;
+}
+
+export function addNotification(username, message, type = 'SYSTEM') {
+  if (!dataStore.notifications) {
+    dataStore.notifications = [];
+  }
+  const newNotif = {
+    id: `NTF_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    username,
+    message,
+    type,
+    timestamp: new Date().toISOString(),
+    isRead: false
+  };
+  dataStore.notifications.unshift(newNotif);
+  saveDataStoreToFile(dataStore);
+  return newNotif;
+}
+
+export function getNotifications(username) {
+  if (!dataStore.notifications) {
+    dataStore.notifications = [];
+  }
+  const cleanId = username ? username.trim().toLowerCase() : '';
+  const member = dataStore.members.find(m => 
+    (m.memberId && m.memberId.toLowerCase() === cleanId) || 
+    (m.phone && m.phone.trim().toLowerCase() === cleanId)
+  );
+
+  const ids = [username.trim().toLowerCase()];
+  if (member) {
+    if (member.memberId) ids.push(member.memberId.toLowerCase());
+    if (member.phone) ids.push(member.phone.toLowerCase());
+  }
+
+  const digits = username.replace(/\D/g, '');
+
+  return dataStore.notifications.filter(n => {
+    if (!n.username) return false;
+    const nClean = n.username.trim().toLowerCase();
+    if (ids.includes(nClean)) return true;
+    
+    const nDigits = n.username.replace(/\D/g, '');
+    if (digits.length >= 6 && nDigits.length >= 6) {
+      return digits === nDigits || digits.endsWith(nDigits) || nDigits.endsWith(digits);
+    }
+    return false;
+  });
+}
+
+export function addWithdrawalRequest(username, amount, method, paymentNumber) {
+  const wallet = getWallet(username);
+  if (wallet.balance < amount) {
+    return { success: false, message: 'Insufficient wallet balance.' };
+  }
+
+  wallet.balance -= Number(amount);
+  if (!wallet.transactions) wallet.transactions = [];
+  wallet.transactions.push({
+    id: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    amount: -Number(amount),
+    type: 'WITHDRAW',
+    description: `Withdrawal request submitted (${method} - ${paymentNumber || ''})`,
+    date: new Date().toISOString()
+  });
+
+  if (!dataStore.withdrawals) {
+    dataStore.withdrawals = [];
+  }
+
+  const newRequest = {
+    id: `WTH_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    username,
+    amount: Number(amount),
+    method,
+    paymentNumber: paymentNumber || '',
+    status: 'PENDING',
+    requestedAt: new Date().toISOString(),
+    processedAt: null
+  };
+
+  dataStore.withdrawals.unshift(newRequest);
+  saveDataStoreToFile(dataStore);
+
+  addNotification(username, `Withdrawal request of ৳${amount} BDT (${method} to ${paymentNumber || ''}) submitted.`, 'WALLET');
+  return { success: true, request: newRequest };
+}
+
+export function getWithdrawals(username = null) {
+  if (!dataStore.withdrawals) {
+    dataStore.withdrawals = [];
+  }
+  if (username) {
+    const cleanId = username.trim().toLowerCase();
+    const member = dataStore.members.find(m => 
+      (m.memberId && m.memberId.toLowerCase() === cleanId) || 
+      (m.phone && m.phone.trim().toLowerCase() === cleanId)
+    );
+
+    const ids = [cleanId];
+    if (member) {
+      if (member.memberId) ids.push(member.memberId.toLowerCase());
+      if (member.phone) ids.push(member.phone.toLowerCase());
+    }
+
+    const digits = username.replace(/\D/g, '');
+
+    return dataStore.withdrawals.filter(w => {
+      if (!w.username) return false;
+      const wClean = w.username.trim().toLowerCase();
+      if (ids.includes(wClean)) return true;
+
+      const wDigits = w.username.replace(/\D/g, '');
+      if (digits.length >= 6 && wDigits.length >= 6) {
+        return digits === wDigits || digits.endsWith(wDigits) || wDigits.endsWith(digits);
+      }
+      return false;
+    });
+  }
+  return dataStore.withdrawals;
+}
+
+export function updateWithdrawalStatus(requestId, status) {
+  if (!dataStore.withdrawals) {
+    dataStore.withdrawals = [];
+  }
+  const req = dataStore.withdrawals.find(w => w.id === requestId);
+  if (!req) return { success: false, message: 'Withdrawal request not found.' };
+  if (req.status !== 'PENDING') {
+    return { success: false, message: 'Withdrawal request already processed.' };
+  }
+
+  req.status = status;
+  req.processedAt = new Date().toISOString();
+
+  if (status === 'REJECTED') {
+    const wallet = getWallet(req.username);
+    wallet.balance += req.amount;
+    if (!wallet.transactions) wallet.transactions = [];
+    wallet.transactions.push({
+      id: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      amount: req.amount,
+      type: 'DEPOSIT',
+      description: `Refund for rejected withdrawal request #${req.id}`,
+      date: new Date().toISOString()
+    });
+    addNotification(req.username, `Withdrawal request of ৳${req.amount} BDT was rejected. Wallet refunded.`, 'WALLET');
+  } else if (status === 'APPROVED') {
+    addNotification(req.username, `Withdrawal request of ৳${req.amount} BDT was approved.`, 'WALLET');
+  }
+
+  saveDataStoreToFile(dataStore);
+  return { success: true, request: req };
+}
+
+export function addToBinaryTree(treeType, memberId) {
+  const parentKey = treeType === 'buyer' ? 'buyerParent' : 'investorParent';
+  const leftKey = treeType === 'buyer' ? 'buyerLeft' : 'investorLeft';
+  const rightKey = treeType === 'buyer' ? 'buyerRight' : 'investorRight';
+
+  const member = dataStore.members.find(m => m.memberId === memberId);
+  if (!member) return;
+
+  if (member[parentKey] !== undefined) {
+    return;
+  }
+
+  const treeMembers = dataStore.members.filter(m => m[parentKey] !== undefined);
+
+  if (treeMembers.length === 0) {
+    const plan101 = dataStore.members.find(m => m.memberId === 'Plan10-101');
+    if (plan101 && plan101.memberId !== memberId) {
+      plan101[parentKey] = null;
+      plan101[leftKey] = null;
+      plan101[rightKey] = null;
+      saveDataStoreToFile(dataStore);
+      addToBinaryTree(treeType, memberId);
+      return;
+    } else {
+      member[parentKey] = null;
+      member[leftKey] = null;
+      member[rightKey] = null;
+      saveDataStoreToFile(dataStore);
+      addNotification(member.phone || member.memberId, `Placed at root of ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      return;
+    }
+  }
+
+  const root = treeMembers.find(m => m[parentKey] === null);
+  if (!root) {
+    treeMembers[0][parentKey] = null;
+    saveDataStoreToFile(dataStore);
+    addToBinaryTree(treeType, memberId);
+    return;
+  }
+
+  const queue = [root];
+  while (queue.length > 0) {
+    const current = queue.shift();
+
+    if (!current[leftKey]) {
+      current[leftKey] = memberId;
+      member[parentKey] = current.memberId;
+      member[leftKey] = null;
+      member[rightKey] = null;
+      saveDataStoreToFile(dataStore);
+      addNotification(member.phone || member.memberId, `Placed under ${current.name} (Left) in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      addNotification(current.phone || current.memberId, `${member.name} joined Left under you in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      return;
+    } else {
+      const leftChild = dataStore.members.find(m => m.memberId === current[leftKey]);
+      if (leftChild) queue.push(leftChild);
+    }
+
+    if (!current[rightKey]) {
+      current[rightKey] = memberId;
+      member[parentKey] = current.memberId;
+      member[leftKey] = null;
+      member[rightKey] = null;
+      saveDataStoreToFile(dataStore);
+      addNotification(member.phone || member.memberId, `Placed under ${current.name} (Right) in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      addNotification(current.phone || current.memberId, `${member.name} joined Right under you in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      return;
+    } else {
+      const rightChild = dataStore.members.find(m => m.memberId === current[rightKey]);
+      if (rightChild) queue.push(rightChild);
+    }
+  }
+}
+
+export function buildBinaryTreeUI(memberId, treeType, depth = 1) {
+  if (!memberId || depth > 4) return null;
+  const m = dataStore.members.find(x => x.memberId === memberId);
+  if (!m) return null;
+
+  const leftKey = treeType === 'buyer' ? 'buyerLeft' : 'investorLeft';
+  const rightKey = treeType === 'buyer' ? 'buyerRight' : 'investorRight';
+
+  const leftNode = m[leftKey] ? buildBinaryTreeUI(m[leftKey], treeType, depth + 1) : null;
+  const rightNode = m[rightKey] ? buildBinaryTreeUI(m[rightKey], treeType, depth + 1) : null;
+
+  return {
+    memberId: m.memberId,
+    name: m.name,
+    phone: m.phone,
+    left: leftNode,
+    right: rightNode
+  };
 }
 

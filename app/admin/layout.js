@@ -2,15 +2,20 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import ErrorBoundary from '@/app/components/ErrorBoundary';
 import './admin.css';
 
 export default function AdminLayout({ children }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [pendingBadge, setPendingBadge] = useState(0);
+  const [pendingBuyerBadge, setPendingBuyerBadge] = useState(0);
   const [pendingOrdersBadge, setPendingOrdersBadge] = useState(0);
+  const [pendingWithdrawalsBadge, setPendingWithdrawalsBadge] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const userMenuRef = useRef(null);
 
   async function fetchPendingCount() {
@@ -20,6 +25,9 @@ export default function AdminLayout({ children }) {
       if (data.success && data.applications) {
         const pending = data.applications.filter((a) => a.status === 'PENDING' && a.purpose !== 'Buy Product').length;
         setPendingBadge(pending);
+        
+        const pendingBuyer = data.applications.filter((a) => a.status === 'PENDING' && a.purpose === 'Buy Product').length;
+        setPendingBuyerBadge(pendingBuyer);
       }
 
       const ordersRes = await fetch('/api/orders');
@@ -27,6 +35,13 @@ export default function AdminLayout({ children }) {
       if (ordersData.success && ordersData.orders) {
         const pendingOrders = ordersData.orders.filter((o) => o.status === 'PENDING').length;
         setPendingOrdersBadge(pendingOrders);
+      }
+
+      const withdrawalsRes = await fetch('/api/admin/withdrawals');
+      const withdrawalsData = await withdrawalsRes.json();
+      if (withdrawalsData.success && withdrawalsData.withdrawals) {
+        const pendingW = withdrawalsData.withdrawals.filter((w) => w.status === 'PENDING').length;
+        setPendingWithdrawalsBadge(pendingW);
       }
     } catch (e) {
       console.error('Failed to fetch counts', e);
@@ -57,17 +72,34 @@ export default function AdminLayout({ children }) {
   }, []);
 
   useEffect(() => {
-    // Ensure admin session is persisted in localStorage when visiting admin pages
-    try {
-      const saved = localStorage.getItem('plan10_user');
-      if (!saved) {
+    // Verify admin session via httpOnly cookie
+    async function verifySession() {
+      try {
+        const res = await fetch('/api/auth/session');
+        const data = await res.json();
+        if (!data.success || data.user?.role !== 'ADMIN') {
+          // Not authenticated — redirect to home
+          router.replace('/');
+          return;
+        }
+        // Persist to localStorage for UI display
         localStorage.setItem('plan10_user', JSON.stringify({
-          name: 'Corporate Executive Admin',
-          username: 'admin',
-          role: 'ADMIN'
+          name: data.user.name,
+          username: data.user.username,
+          role: data.user.role
         }));
+      } catch (e) {
+        // If session check fails, fall back to localStorage (dev/offline scenario)
+        const saved = localStorage.getItem('plan10_user');
+        if (!saved) {
+          router.replace('/');
+          return;
+        }
+      } finally {
+        setSessionChecked(true);
       }
-    } catch (e) {}
+    }
+    verifySession();
   }, []);
 
   // Close sidebar on route change on mobile
@@ -78,11 +110,13 @@ export default function AdminLayout({ children }) {
 
   const navItems = [
     { label: 'Dashboard Overview', href: '/admin', icon: 'fa-chart-line' },
-    { label: 'SPL Applications', href: '/admin/applications', icon: 'fa-file-contract', badge: pendingBadge },
+    { label: 'Investor Applications', href: '/admin/applications', icon: 'fa-file-contract', badge: pendingBadge },
+    { label: 'Buyer Applications', href: '/admin/buyer-applications', icon: 'fa-file-signature', badge: pendingBuyerBadge },
     { label: 'Active Members', href: '/admin/members', icon: 'fa-users' },
-    { label: 'Referral Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
+    { label: 'Investor Referral Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
     { label: 'Products Selling Tree', href: '/admin/products-tree', icon: 'fa-diagram-project' },
     { label: 'Monthly Payouts', href: '/admin/payouts', icon: 'fa-hand-holding-dollar' },
+    { label: 'Withdrawals', href: '/admin/withdrawals', icon: 'fa-money-bill-transfer', badge: pendingWithdrawalsBadge },
     { label: 'Products & Sectors', href: '/admin/products', icon: 'fa-boxes-packing' },
     { label: 'Product Orders', href: '/admin/orders', icon: 'fa-cart-flatbed', badge: pendingOrdersBadge },
     { label: 'Inquiries & Leads', href: '/admin/inquiries', icon: 'fa-envelope-open-text' }
@@ -183,7 +217,15 @@ export default function AdminLayout({ children }) {
                 </Link>
                 <button
                   className="dropdown-item logout-item"
-                  onClick={() => {
+                  onClick={async () => {
+                    // Clear httpOnly cookie via server
+                    try {
+                      await fetch('/api/auth/session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'logout' })
+                      });
+                    } catch (e) {}
                     localStorage.removeItem('plan10_user');
                     window.location.href = '/';
                   }}
@@ -196,7 +238,11 @@ export default function AdminLayout({ children }) {
           </div>
         </header>
 
-        <div className="admin-content">{children}</div>
+        <div className="admin-content">
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
+        </div>
       </main>
     </div>
   );

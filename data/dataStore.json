@@ -3,60 +3,50 @@
     {
       "id": "usr_admin",
       "username": "admin",
-      "password": "admin",
+      "password": "scrypt:5bfcb4861224322530fe2f667073898d:3715929d0615bbe50c46573aa2d60d569f785de46c13df1dbb696dcac006c5e1cdf00a850940b997aace3ad7546e328924c101cff64d6c3a6240ed37b55356b9",
       "name": "Corporate Executive Admin",
       "email": "admin@plan10bd.com",
       "role": "ADMIN",
-      "createdAt": "2026-07-02T01:25:36.894Z"
+      "createdAt": "2026-07-04T00:41:24.455Z"
     },
     {
-      "id": "usr_1782955726346",
+      "id": "usr_1783126174662",
       "username": "Plan10-101",
       "phone": "01838566094",
-      "password": "rakib",
+      "password": "scrypt:dbe6eb41324ecb167e30f5e0b86db1d1:d775bb75c843da27617a546b60aec9b84049478dc8151390c2258ffe935f1e946555239fec1077d1c41d8b6301fc19d1bbeb2e82e75fd8cf6cc8702280873d29",
       "name": "Rakib vai",
       "email": "rakibvai@gmail.com",
       "role": "USER",
-      "createdAt": "2026-07-02T01:28:46.346Z"
+      "createdAt": "2026-07-04T00:49:34.694Z"
     },
     {
-      "id": "usr_1782956010424",
+      "id": "usr_1783126319892",
       "username": "Plan10-102",
       "phone": "01840757566",
-      "password": "ripon",
-      "name": "Ripon ",
+      "password": "scrypt:e399b0a0c14c8eeba7266007a9e6f229:6cf121dac1cf0cfe12c75d2aadbe19f41d5660e01dabd215f7d3282e346c15c812568c4d0d897309b4d927c386d394815c9f9df17133371784ea009d06421dda",
+      "name": "Ripon",
       "email": "ripon@gmail.com",
       "role": "USER",
-      "createdAt": "2026-07-02T01:33:30.424Z"
+      "createdAt": "2026-07-04T00:51:59.926Z"
     },
     {
-      "id": "usr_1782956279318",
+      "id": "usr_1783160842840",
       "username": "Plan10-103",
-      "phone": "01840757501",
-      "password": "ripon",
-      "name": "ripon2",
-      "email": "ripon2@gmail.com",
+      "phone": "01840757563",
+      "password": "scrypt:64e886cd7f098093b3372d85847e0e50:ca18b1733b023311e9fa774f08f05e16d3ffe8f7d1347060a50ddb5aa73147cb4bdc770a0026584eae8679535acb43fdcf22fb4dfa91e5a5aebfac37e191cf99",
+      "name": "ripon5",
+      "email": "ripon5@gmail.com",
       "role": "USER",
-      "createdAt": "2026-07-02T01:37:59.318Z"
-    },
-    {
-      "id": "usr_1782966452240",
-      "username": "Plan10-104",
-      "phone": "018757562",
-      "password": "ripon",
-      "name": "ripon3",
-      "email": "ripon3@gmail.com",
-      "role": "USER",
-      "createdAt": "2026-07-02T04:27:32.240Z"
+      "createdAt": "2026-07-04T10:27:22.874Z"
     }
   ],
   "applications": [
     {
-      "id": "APP-2026-004",
-      "applicantName": "ripon3",
-      "nid": "464634613635",
+      "id": "APP-2026-003",
+      "applicantName": "ripon5",
+      "nid": "56464654165",
       "fatherName": "",
-      "phone": "018757562",
+      "phone": "01840757563",
       "password": "ripon",
       "address": "",
       "capitalAmount": 0,
@@ -64,44 +54,33 @@
       "nomineeName": "",
       "relation": "",
       "purpose": "Buy Product",
-      "productId": 1,
+      "productId": null,
+      "referredBy": "",
       "status": "APPROVED",
-      "submittedAt": "2026-07-02T04:26:57.946Z"
-    },
-    {
-      "id": "APP-2026-003",
-      "applicantName": "ripon2",
-      "nid": "5646546564654",
-      "fatherName": "",
-      "phone": "01840757501",
-      "password": "ripon",
-      "address": "",
-      "capitalAmount": 100000,
-      "durationMonths": 33,
-      "nomineeName": "",
-      "relation": "",
-      "status": "APPROVED",
-      "submittedAt": "2026-07-02T01:37:06.642Z"
+      "submittedAt": "2026-07-04T10:26:03.048Z"
     },
     {
       "id": "APP-2026-002",
-      "applicantName": "Ripon ",
-      "nid": "65465464555",
+      "applicantName": "Ripon",
+      "nid": "4564136163416541",
       "fatherName": "",
       "phone": "01840757566",
       "password": "ripon",
       "address": "",
-      "capitalAmount": 100000,
-      "durationMonths": 33,
+      "capitalAmount": 0,
+      "durationMonths": 0,
       "nomineeName": "",
       "relation": "",
+      "purpose": "Buy Product",
+      "productId": null,
+      "referredBy": "",
       "status": "APPROVED",
-      "submittedAt": "2026-07-02T01:33:18.698Z"
+      "submittedAt": "2026-07-04T00:51:43.360Z"
     },
     {
       "id": "APP-2026-001",
       "applicantName": "Rakib vai",
-      "nid": "664646464444",
+      "nid": "546546416416",
       "fatherName": "",
       "phone": "01838566094",
       "password": "rakib",
@@ -110,8 +89,11 @@
       "durationMonths": 33,
       "nomineeName": "",
       "relation": "",
+      "purpose": "Investment",
+      "productId": null,
+      "referredBy": "",
       "status": "APPROVED",
-      "submittedAt": "2026-07-02T01:27:54.709Z"
+      "submittedAt": "2026-07-04T00:49:18.224Z"
     }
   ],
   "members": [
@@ -119,65 +101,61 @@
       "memberId": "Plan10-101",
       "name": "Rakib vai",
       "phone": "01838566094",
-      "nid": "664646464444",
+      "nid": "546546416416",
       "capitalInvested": 100000,
       "termMonths": 33,
       "monthlyProfit": 3000,
       "monthlyCapitalRefund": 3030,
       "monthlyTotalPayout": 6030,
-      "joinDate": "2026-07-02",
+      "joinDate": "2026-07-04",
       "status": "ACTIVE",
       "nomineeName": "Legal Heir",
       "relation": "Family",
-      "referredBy": null
+      "referredBy": null,
+      "investorParent": null,
+      "investorLeft": null,
+      "investorRight": null,
+      "buyerParent": null,
+      "buyerLeft": "Plan10-102",
+      "buyerRight": "Plan10-103"
     },
     {
       "memberId": "Plan10-102",
-      "name": "Ripon ",
+      "name": "Ripon",
       "phone": "01840757566",
-      "nid": "65465464555",
-      "capitalInvested": 100000,
-      "termMonths": 33,
-      "monthlyProfit": 3000,
-      "monthlyCapitalRefund": 3030,
-      "monthlyTotalPayout": 6030,
-      "joinDate": "2026-07-02",
-      "status": "ACTIVE",
-      "nomineeName": "Legal Heir",
-      "relation": "Family",
-      "referredBy": "Plan10-101"
-    },
-    {
-      "memberId": "Plan10-103",
-      "name": "ripon2",
-      "phone": "01840757501",
-      "nid": "5646546564654",
-      "capitalInvested": 100000,
-      "termMonths": 33,
-      "monthlyProfit": 3000,
-      "monthlyCapitalRefund": 3030,
-      "monthlyTotalPayout": 6030,
-      "joinDate": "2026-07-02",
-      "status": "ACTIVE",
-      "nomineeName": "Legal Heir",
-      "relation": "Family",
-      "referredBy": "Plan10-101"
-    },
-    {
-      "memberId": "Plan10-104",
-      "name": "ripon3",
-      "phone": "018757562",
-      "nid": "464634613635",
+      "nid": "4564136163416541",
       "capitalInvested": 0,
       "termMonths": 0,
       "monthlyProfit": 0,
       "monthlyCapitalRefund": 0,
       "monthlyTotalPayout": 0,
-      "joinDate": "2026-07-02",
+      "joinDate": "2026-07-04",
       "status": "ACTIVE",
       "nomineeName": "Legal Heir",
       "relation": "Family",
-      "referredBy": null
+      "referredBy": "Plan10-101",
+      "buyerParent": "Plan10-101",
+      "buyerLeft": null,
+      "buyerRight": null
+    },
+    {
+      "memberId": "Plan10-103",
+      "name": "ripon5",
+      "phone": "01840757563",
+      "nid": "56464654165",
+      "capitalInvested": 0,
+      "termMonths": 0,
+      "monthlyProfit": 0,
+      "monthlyCapitalRefund": 0,
+      "monthlyTotalPayout": 0,
+      "joinDate": "2026-07-04",
+      "status": "ACTIVE",
+      "nomineeName": "Legal Heir",
+      "relation": "Family",
+      "referredBy": null,
+      "buyerParent": "Plan10-101",
+      "buyerLeft": null,
+      "buyerRight": null
     }
   ],
   "payouts": [],
@@ -185,151 +163,120 @@
     {
       "id": 1,
       "name": "Shirt and Pant combo pack",
-      "brand": "Plan10-Cloth",
-      "category": "Cloth",
+      "brand": "Plan10 - Choth",
+      "category": "Choth",
       "price": 2500,
-      "description": "Shirt and Pant combo pack - Premium quality consumer product designed for maximum user satisfaction.",
-      "imageUrl": "/uploads/1782966276942_p3.avif",
+      "description": "",
+      "imageUrl": "/uploads/1783163514787_p4.jpg",
       "imageUrls": [
-        "/uploads/1782966276942_p3.avif"
+        "/uploads/1783163514787_p4.jpg"
       ],
       "stockStatus": "IN_STOCK"
     },
     {
       "id": 2,
-      "name": "lungi",
-      "brand": "Plan10-Cloth",
-      "category": "Cloth",
+      "name": "Lungi combo pack",
+      "brand": "PLAN-10 Choth",
+      "category": "Choth",
       "price": 2500,
       "description": "",
-      "imageUrl": "/uploads/1783071342760_41TD3G7Rs_L.jpg",
+      "imageUrl": "/uploads/1783163571541_ed61447a8ca981766e6ed680c98d2d5d.jpg",
       "imageUrls": [
-        "/uploads/1783071342760_41TD3G7Rs_L.jpg"
+        "/uploads/1783163571541_ed61447a8ca981766e6ed680c98d2d5d.jpg"
       ],
       "stockStatus": "IN_STOCK"
     }
   ],
   "inquiries": [],
   "categories": [
-    "Cloth"
+    "Choth"
   ],
   "logs": [
     {
-      "id": "log_1782968742067_auw73",
-      "timestamp": "2026-07-02 11:05 AM",
-      "action": "Database JSON Exported",
-      "ipAddress": "::ffff:192.168.56.1",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782965525604_1h696",
-      "timestamp": "2026-07-02 10:12 AM",
-      "action": "Database Restored from JSON Backup",
-      "ipAddress": "::1",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782965525603",
-      "timestamp": "2026-07-02 10:12 AM",
-      "action": "Database Restored from JSON Backup",
-      "ipAddress": "Internal System Process",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782956935438_mlyas",
-      "timestamp": "2026-07-02 07:48 AM",
-      "action": "Database Restored from JSON Backup",
-      "ipAddress": "::ffff:192.168.56.1",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782956935438",
-      "timestamp": "2026-07-02 07:48 AM",
-      "action": "Database Restored from JSON Backup",
-      "ipAddress": "Internal System Process",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782956869121_mg23j",
-      "timestamp": "2026-07-02 07:47 AM",
-      "action": "Database JSON Exported",
-      "ipAddress": "::ffff:192.168.56.1",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782956817792_kdcrw",
-      "timestamp": "2026-07-02 07:46 AM",
-      "action": "Database JSON Exported",
-      "ipAddress": "::ffff:192.168.56.1",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782956548422_uqer0",
-      "timestamp": "2026-07-02 07:42 AM",
-      "action": "Database JSON Exported",
-      "ipAddress": "::ffff:192.168.56.1",
-      "status": "Success"
-    },
-    {
-      "id": "log_1782955536895_1j2y8",
-      "timestamp": "2026-07-02 07:25 AM",
+      "id": "log_1783125684458_e5osr",
+      "timestamp": "2026-07-04 06:41 AM",
       "action": "Factory Reset Executed",
       "ipAddress": "::ffff:192.168.56.1",
       "status": "Success"
     },
     {
-      "id": "log_1782955536894",
-      "timestamp": "2026-07-02 07:25 AM",
+      "id": "log_1783125684456",
+      "timestamp": "2026-07-04 06:41 AM",
       "action": "Factory Reset Executed",
       "ipAddress": "Internal System Process",
       "status": "Success"
     }
   ],
-  "orders": [
+  "orders": [],
+  "withdrawals": [],
+  "wallets": [
     {
-      "id": "ORD_1783071390965_uc9ph",
-      "username": "Plan10-104",
-      "productId": 2,
-      "productName": "lungi",
-      "price": 2500,
-      "status": "DELIVERED",
-      "orderedAt": "2026-07-03T09:36:30.965Z"
+      "username": "Plan10-102",
+      "balance": 0,
+      "transactions": []
     },
     {
-      "id": "ORD_1782968465706_fblqk",
-      "username": "Plan10-104",
-      "productId": 1,
-      "productName": "Shirt and Pant combo pack",
-      "price": 2500,
-      "status": "DELIVERED",
-      "orderedAt": "2026-07-02T05:01:05.706Z"
+      "username": "Plan10-101",
+      "balance": 500,
+      "transactions": [
+        {
+          "id": "TXN_1783126607954_ei2c6",
+          "amount": 500,
+          "type": "REFERRAL_BONUS",
+          "description": "Direct Referral Bonus for linking Buyer (Ripon)",
+          "date": "2026-07-04T00:56:47.954Z"
+        }
+      ]
+    }
+  ],
+  "notifications": [
+    {
+      "id": "NTF_1783160842839_5by4m",
+      "username": "01838566094",
+      "message": "ripon5 joined Right under you in Buyer Tree.",
+      "type": "ORDER",
+      "timestamp": "2026-07-04T10:27:22.839Z",
+      "isRead": false
     },
     {
-      "id": "ORD_1782968465662_nlx45",
-      "username": "Plan10-104",
-      "productId": 1,
-      "productName": "Shirt and Pant combo pack",
-      "price": 2500,
-      "status": "REJECTED",
-      "orderedAt": "2026-07-02T05:01:05.662Z"
+      "id": "NTF_1783160842838_xuk2i",
+      "username": "01840757563",
+      "message": "Placed under Rakib vai (Right) in Buyer Tree.",
+      "type": "ORDER",
+      "timestamp": "2026-07-04T10:27:22.838Z",
+      "isRead": false
     },
     {
-      "id": "ORD_1782966417946_nxk81",
-      "username": "018757562",
-      "productId": 1,
-      "productName": "Shirt and Pant combo pack",
-      "price": 2500,
-      "status": "DELIVERED",
-      "orderedAt": "2026-07-02T04:26:57.946Z"
+      "id": "NTF_1783126607955_edxyp",
+      "username": "Plan10-101",
+      "message": "Wallet updated: +৳500 - Direct Referral Bonus for linking Buyer (Ripon)",
+      "type": "WALLET",
+      "timestamp": "2026-07-04T00:56:47.955Z",
+      "isRead": false
     },
     {
-      "id": "ORD_1782966305581_5rlie",
-      "username": "admin",
-      "productId": 1,
-      "productName": "Shirt and Pant combo pack",
-      "price": 2500,
-      "status": "DELIVERED",
-      "orderedAt": "2026-07-02T04:25:05.581Z"
+      "id": "NTF_1783126319891_7kiyj",
+      "username": "01838566094",
+      "message": "Ripon joined Left under you in Buyer Tree.",
+      "type": "ORDER",
+      "timestamp": "2026-07-04T00:51:59.891Z",
+      "isRead": false
+    },
+    {
+      "id": "NTF_1783126319891_xejfx",
+      "username": "01840757566",
+      "message": "Placed under Rakib vai (Left) in Buyer Tree.",
+      "type": "ORDER",
+      "timestamp": "2026-07-04T00:51:59.891Z",
+      "isRead": false
+    },
+    {
+      "id": "NTF_1783126174661_6i6yi",
+      "username": "01838566094",
+      "message": "Placed at root of Investor Tree.",
+      "type": "INVESTMENT",
+      "timestamp": "2026-07-04T00:49:34.661Z",
+      "isRead": false
     }
   ]
 }

@@ -1,9 +1,24 @@
 import { NextResponse } from 'next/server';
 import { getOrders, addOrder, updateOrderStatus, getDataStore } from '@/app/lib/dataStore';
+import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
+import { verifySessionToken, getSessionCookieName } from '@/app/lib/session';
+
+const COOKIE_NAME = getSessionCookieName();
 
 function checkAdminRole(request) {
-  const role = request.headers.get('x-admin-role');
-  return role === 'ADMIN';
+  const cookieHeader = request.headers.get('cookie') || '';
+  const cookies = Object.fromEntries(
+    cookieHeader.split(';').map((c) => {
+      const [k, ...v] = c.trim().split('=');
+      return [k.trim(), v.join('=')];
+    })
+  );
+  const token = cookies[COOKIE_NAME];
+  if (token) {
+    const { valid, payload } = verifySessionToken(token);
+    if (valid && payload?.role === 'ADMIN') return true;
+  }
+  return request.headers.get('x-admin-role') === 'ADMIN';
 }
 
 export async function GET(request) {
@@ -48,6 +63,8 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
+    if (!validateOrigin(request)) return csrfDenied();
+
     const body = await request.json();
     const { username, productId } = body;
 
@@ -58,8 +75,17 @@ export async function POST(request) {
       );
     }
 
+    // Validate productId is a positive integer
+    const numericProductId = Number(productId);
+    if (!Number.isInteger(numericProductId) || numericProductId <= 0) {
+      return NextResponse.json(
+        { success: false, message: 'Invalid productId.' },
+        { status: 400 }
+      );
+    }
+
     const store = getDataStore();
-    const product = store.products.find((p) => p.id === Number(productId));
+    const product = store.products.find((p) => p.id === numericProductId);
     if (!product) {
       return NextResponse.json(
         { success: false, message: 'Product not found.' },
@@ -85,6 +111,7 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
+    if (!validateOrigin(request)) return csrfDenied();
     if (!checkAdminRole(request)) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized: Only admins can update order status.' },
@@ -100,6 +127,11 @@ export async function PUT(request) {
         { success: false, message: 'Missing orderId or status.' },
         { status: 400 }
       );
+    }
+
+    const VALID_STATUSES = ['PENDING', 'PROCESSING', 'DELIVERED', 'REJECTED'];
+    if (!VALID_STATUSES.includes(status)) {
+      return NextResponse.json({ success: false, message: 'Invalid status value.' }, { status: 400 });
     }
 
     const updatedOrder = updateOrderStatus(orderId, status);

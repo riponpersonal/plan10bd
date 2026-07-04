@@ -98,6 +98,7 @@ body {
   flex-direction: column;
   gap: 6px;
   flex-grow: 1;
+  overflow-y: auto;
 }
 
 .sidebar-link {

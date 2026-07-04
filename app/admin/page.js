@@ -5,25 +5,32 @@ import Link from 'next/link';
 
 export default function AdminDashboardOverview() {
   const [apps, setApps] = useState([]);
+  const [buyerApps, setBuyerApps] = useState([]);
   const [members, setMembers] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showReferralsModal, setShowReferralsModal] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [resApps, resMembers] = await Promise.all([
+        const [resApps, resMembers, resOrders] = await Promise.all([
           fetch('/api/applications'),
-          fetch('/api/members')
+          fetch('/api/members'),
+          fetch('/api/orders')
         ]);
         const dataApps = await resApps.json();
         const dataMembers = await resMembers.json();
+        const dataOrders = await resOrders.json();
 
         if (dataApps.success) {
           const splApps = dataApps.applications.filter(a => a.purpose !== 'Buy Product');
           setApps(splApps);
+          const bApps = dataApps.applications.filter(a => a.purpose === 'Buy Product');
+          setBuyerApps(bApps);
         }
         if (dataMembers.success) setMembers(dataMembers.members);
+        if (dataOrders.success) setOrders(dataOrders.orders || []);
       } catch (e) {
         console.error('Failed to load dashboard data');
       } finally {
@@ -39,6 +46,13 @@ export default function AdminDashboardOverview() {
   const totalReferralCommissions = members
     .filter(m => m.referredBy && members.some(parent => parent.memberId === m.referredBy))
     .reduce((acc, m) => acc + (m.capitalInvested * 0.06), 0);
+
+  // Product Buyer Metrics calculations
+  const totalProductRevenue = orders.filter(o => o.status !== 'REJECTED').reduce((acc, o) => acc + (o.price || 0), 0);
+  const pendingOrders = orders.filter(o => o.status === 'PENDING').length;
+  const pendingBuyerApps = buyerApps.filter(a => a.status === 'PENDING').length;
+  const activeBuyers = buyerApps.filter(a => a.status === 'APPROVED').length;
+  const buyerReferralsPayout = buyerApps.filter(a => a.status === 'APPROVED' && a.referredBy).length * 500;
 
   const referralEvents = members
     .filter(m => m.referredBy && members.some(parent => parent.memberId === m.referredBy))
@@ -60,7 +74,79 @@ export default function AdminDashboardOverview() {
 
   return (
     <div>
-      <div className="metrics-grid">
+      {/* Product Buyer & Sales Overview */}
+      <h3 style={{ marginBottom: '16px', color: '#ffffff', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <i className="fa-solid fa-cart-shopping" style={{ color: '#3b82f6' }}></i>
+        Product Buyer & Sales Overview
+      </h3>
+      <div className="metrics-grid" style={{ marginBottom: '32px' }}>
+        <div className="metric-card">
+          <div className="metric-info">
+            <h4>Total Product Revenue</h4>
+            <h3 className="metric-number">{formatBDT(totalProductRevenue)}</h3>
+          </div>
+          <div className="metric-icon icon-green">
+            <i className="fa-solid fa-hand-holding-dollar"></i>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-info">
+            <h4>Total Sales Orders</h4>
+            <h3 className="metric-number">{orders.length}</h3>
+          </div>
+          <div className="metric-icon icon-blue">
+            <i className="fa-solid fa-boxes-packing"></i>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-info">
+            <h4>Pending Product Orders</h4>
+            <h3 className="metric-number">{pendingOrders}</h3>
+          </div>
+          <div className="metric-icon icon-amber">
+            <i className="fa-solid fa-clock"></i>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-info">
+            <h4>Pending Buyer Apps</h4>
+            <h3 className="metric-number">{pendingBuyerApps}</h3>
+          </div>
+          <div className="metric-icon icon-amber" style={{ backgroundColor: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+            <i className="fa-solid fa-file-signature"></i>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-info">
+            <h4>Active Product Buyers</h4>
+            <h3 className="metric-number">{activeBuyers}</h3>
+          </div>
+          <div className="metric-icon icon-purple">
+            <i className="fa-solid fa-users"></i>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-info">
+            <h4>Buyer Referral Distribute</h4>
+            <h3 className="metric-number">{formatBDT(buyerReferralsPayout)}</h3>
+          </div>
+          <div className="metric-icon icon-blue" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+            <i className="fa-solid fa-gift"></i>
+          </div>
+        </div>
+      </div>
+
+      {/* SPL Investment Overview */}
+      <h3 style={{ marginBottom: '16px', color: '#ffffff', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <i className="fa-solid fa-sack-dollar" style={{ color: '#10b981' }}></i>
+        SPL Investment Overview
+      </h3>
+      <div className="metrics-grid" style={{ marginBottom: '32px' }}>
         <div className="metric-card">
           <div className="metric-info">
             <h4>Total Managed Capital</h4>
@@ -120,6 +206,72 @@ export default function AdminDashboardOverview() {
         </div>
       </div>
 
+      {/* Product Buyer Applications Section */}
+      <div className="card-table-container">
+        <div className="table-header-row">
+          <h3>Recent Product Buyer Submissions</h3>
+          <Link href="/admin/buyer-applications" className="btn-action btn-view">
+            View All Applications ({buyerApps.length})
+          </Link>
+        </div>
+
+        {loading ? (
+          <p style={{ padding: '24px' }}>Loading real-time data...</p>
+        ) : buyerApps.length === 0 ? (
+          <p style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No buyer applications found.</p>
+        ) : (
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Application ID</th>
+                <th>Buyer Name & NID</th>
+                <th>Contact Phone</th>
+                <th>Product / Sector</th>
+                <th>Sponsor ID</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {buyerApps.slice(0, 5).map((app) => (
+                <tr key={app.id}>
+                  <td><strong>{app.id}</strong></td>
+                  <td>
+                    <div><strong>{app.applicantName}</strong></div>
+                    <small style={{ color: '#94a3b8' }}>NID: {app.nid || 'N/A'}</small>
+                  </td>
+                  <td>{app.phone}</td>
+                  <td>
+                    <div>
+                      <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '6px', fontSize: '0.78rem', color: '#e2e8f0', fontWeight: 600 }}>
+                        {app.productName || 'Direct Buyer Registration'}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    {app.referredBy ? (
+                      <span style={{ color: '#38bdf8', fontWeight: 600, fontFamily: 'monospace' }}>{app.referredBy}</span>
+                    ) : (
+                      <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>None</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className={`badge-status badge-${app.status.toLowerCase()}`}>
+                      {app.status}
+                    </span>
+                  </td>
+                  <td>
+                    <Link href="/admin/buyer-applications" className="btn-action btn-view">
+                      Process
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       {/* Table Container */}
       <div className="card-table-container">
         <div className="table-header-row">
@@ -131,6 +283,8 @@ export default function AdminDashboardOverview() {
 
         {loading ? (
           <p style={{ padding: '24px' }}>Loading real-time data...</p>
+        ) : apps.length === 0 ? (
+          <p style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No investment applications found.</p>
         ) : (
           <table className="admin-table">
             <thead>

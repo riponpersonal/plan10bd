@@ -162,6 +162,125 @@ export default function AdminReferralsTreePage() {
   const handleZoomOut = () => setZoomScale(prev => Math.max(prev - 0.15, 0.4));
   const handleResetZoom = () => setZoomScale(1.0);
 
+  const treeType = 'investor';
+
+  const buildFullBinaryTree = (memberId) => {
+    if (!memberId) return null;
+    const m = members.find(x => x.memberId === memberId);
+    if (!m) return null;
+
+    const leftKey = treeType === 'buyer' ? 'buyerLeft' : 'investorLeft';
+    const rightKey = treeType === 'buyer' ? 'buyerRight' : 'investorRight';
+
+    return {
+      memberId: m.memberId,
+      name: m.name,
+      phone: m.phone,
+      capitalInvested: m.capitalInvested,
+      left: m[leftKey] ? buildFullBinaryTree(m[leftKey]) : null,
+      right: m[rightKey] ? buildFullBinaryTree(m[rightKey]) : null
+    };
+  };
+
+  const parentKey = treeType === 'buyer' ? 'buyerParent' : 'investorParent';
+  let rootMember = members.find(m => m.memberId === 'Plan10-101');
+  if (!rootMember) {
+    rootMember = members.find(m => m[parentKey] === null);
+  }
+  const binaryRootNode = rootMember ? buildFullBinaryTree(rootMember.memberId) : null;
+
+  const renderBinaryTreeNode = (node, sideLabel = '') => {
+    if (!node) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 10px' }}>
+          <div style={{
+            background: 'rgba(30, 41, 59, 0.4)',
+            border: '2px dashed #475569',
+            borderRadius: '12px',
+            padding: '10px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            minWidth: '140px',
+            color: '#64748b'
+          }}>
+            <i className="fa-solid fa-user-plus" style={{ marginBottom: '6px', fontSize: '0.9rem' }}></i>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Open Slot</span>
+            {sideLabel && <span style={{ fontSize: '0.62rem', background: '#334155', padding: '1px 6px', borderRadius: '4px', marginTop: '4px', color: '#94a3b8' }}>{sideLabel}</span>}
+          </div>
+        </div>
+      );
+    }
+
+    const hasChildren = node.left || node.right;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 10px', position: 'relative' }}>
+        <div 
+          onClick={() => setSelectedMember(members.find(x => x.memberId === node.memberId))}
+          style={{
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            border: '2px solid #10b981',
+            borderRadius: '12px',
+            padding: '10px 14px',
+            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.4)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            minWidth: '140px',
+            zIndex: 2,
+            position: 'relative',
+            cursor: 'pointer'
+          }}
+        >
+          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
+            <i className="fa-solid fa-circle-user" style={{ color: '#10b981', fontSize: '1rem' }}></i>
+          </div>
+          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+            {node.name}
+          </span>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#34d399', fontFamily: 'monospace' }}>
+            {node.memberId}
+          </span>
+          {sideLabel && (
+            <span style={{ fontSize: '0.62rem', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '1px 6px', borderRadius: '4px', marginTop: '4px', color: '#34d399' }}>
+              {sideLabel}
+            </span>
+          )}
+        </div>
+
+        {hasChildren && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginTop: '0px' }}>
+            <div style={{ width: '2px', height: '18px', background: '#475569' }}></div>
+            <div style={{ display: 'flex', position: 'relative', justifyContent: 'center' }}>
+              {/* Connector Line */}
+              <div style={{
+                position: 'absolute',
+                top: '0px',
+                left: '80px',
+                right: '80px',
+                height: '2px',
+                background: '#475569',
+                zIndex: 1
+              }}></div>
+              
+              <div style={{ display: 'flex', gap: '20px', marginTop: '0px', position: 'relative' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{ width: '2px', height: '10px', background: '#475569' }}></div>
+                  {renderBinaryTreeNode(node.left, 'Left')}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{ width: '2px', height: '10px', background: '#475569' }}></div>
+                  {renderBinaryTreeNode(node.right, 'Right')}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Toggle node expansion
   const toggleNodeCollapse = (memberId, e) => {
     e.stopPropagation();
@@ -326,7 +445,7 @@ export default function AdminReferralsTreePage() {
       {/* Header section */}
       <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2>Corporate Referral Tree & Sponsorship Network</h2>
+          <h2>Investor Referral Tree &amp; Sponsorship Network</h2>
           <p style={{ color: '#64748b' }}>Visualize downlines, sponsor connection maps, and track team volume distribution.</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -457,6 +576,8 @@ export default function AdminReferralsTreePage() {
         <div className="tree-page-layout">
           {/* Main Visualizer Area */}
           <div className="tree-main-content">
+
+
             <div className="tree-viewport-card">
               {/* Scrollable scale canvas container */}
               <div style={{ 
@@ -470,7 +591,13 @@ export default function AdminReferralsTreePage() {
                 width: 'max-content',
                 padding: '10px 0'
               }}>
-                {treeData && renderTreeNodeHierarchy(treeData)}
+                {binaryRootNode ? (
+                  renderBinaryTreeNode(binaryRootNode)
+                ) : (
+                  <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.9rem', padding: '40px 0' }}>
+                    No tree placement record found yet for the selected mode.
+                  </div>
+                )}
               </div>
             </div>
           </div>

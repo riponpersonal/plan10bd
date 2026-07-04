@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { DashboardTabContext } from './layout';
 
 export default function UserDashboardPage() {
@@ -8,6 +8,8 @@ export default function UserDashboardPage() {
   const activeTab = context ? context.activeTab : 'overview';
   const setActiveTab = context ? context.setActiveTab : () => {};
   const setUser = context ? context.setUser : () => {};
+  const roleProfile = context ? context.roleProfile : 'INVESTOR';
+  const setRoleProfile = context ? context.setRoleProfile : () => {};
 
   const [loading, setLoading] = useState(true);
   const [dashData, setDashData] = useState(null);
@@ -29,12 +31,35 @@ export default function UserDashboardPage() {
   const [inputRefCode, setInputRefCode] = useState('');
   const [bindingRef, setBindingRef] = useState(false);
   const [refBindMsg, setRefBindMsg] = useState({ type: '', text: '' });
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawMethod, setWithdrawMethod] = useState('bKash');
+  const [showMethodDropdown, setShowMethodDropdown] = useState(false);
+  const methodDropdownRef = useRef(null);
+  const [paymentNumber, setPaymentNumber] = useState('');
+  const [withdrawStatusMsg, setWithdrawStatusMsg] = useState({ type: '', text: '' });
+  const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const [zoomScale, setZoomScale] = useState(1.0);
 
   const handleZoomIn = () => setZoomScale(prev => Math.min(Number((prev + 0.15).toFixed(2)), 2.0));
   const handleZoomOut = () => setZoomScale(prev => Math.max(Number((prev - 0.15).toFixed(2)), 0.4));
   const handleResetZoom = () => setZoomScale(1.0);
+
+  // Close custom method dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (methodDropdownRef.current && !methodDropdownRef.current.contains(e.target)) {
+        setShowMethodDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
 
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
@@ -82,6 +107,9 @@ export default function UserDashboardPage() {
         const result = await res.json();
         if (result.success) {
           setDashData(result.data);
+          if (result.data && result.data.roleProfile) {
+            setRoleProfile(result.data.roleProfile);
+          }
           if (result.data && result.data.member) {
             if (result.data.member.name) {
               setUser(prev => ({ ...prev, name: result.data.member.name }));
@@ -105,7 +133,7 @@ export default function UserDashboardPage() {
     }
 
     fetchDashboard();
-  }, []);
+  }, [refreshTrigger]);
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
@@ -558,124 +586,452 @@ export default function UserDashboardPage() {
     );
   };
 
+  const handleRequestWithdraw = async (e) => {
+    e.preventDefault();
+    const amountVal = Number(withdrawAmount);
+    if (!withdrawAmount || isNaN(amountVal)) {
+      setWithdrawStatusMsg({ type: 'error', text: 'Please enter a valid withdrawal amount.' });
+      return;
+    }
+    if (amountVal < 1000 || amountVal > 25000) {
+      setWithdrawStatusMsg({ type: 'error', text: 'Withdrawal amount must be between ৳1,000 and ৳25,000 BDT.' });
+      return;
+    }
+    if (!paymentNumber.trim()) {
+      setWithdrawStatusMsg({ type: 'error', text: 'Please enter your payment account number.' });
+      return;
+    }
+    setSubmittingWithdraw(true);
+    setWithdrawStatusMsg({ type: '', text: '' });
+    try {
+      const username = dashData.member?.memberId || dashData.member?.phone;
+      const res = await fetch('/api/user/withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          amount: amountVal,
+          method: withdrawMethod,
+          paymentNumber: paymentNumber.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setWithdrawStatusMsg({ type: 'success', text: `Withdrawal request for ৳${withdrawAmount} BDT submitted successfully!` });
+        setWithdrawAmount('');
+        setPaymentNumber('');
+        setRefreshTrigger(prev => prev + 1);
+      } else {
+        setWithdrawStatusMsg({ type: 'error', text: data.message || 'Failed to submit withdrawal request.' });
+      }
+    } catch (err) {
+      console.error(err);
+      setWithdrawStatusMsg({ type: 'error', text: 'Network error submitting withdrawal request.' });
+    } finally {
+      setSubmittingWithdraw(false);
+      setTimeout(() => setWithdrawStatusMsg({ type: '', text: '' }), 5000);
+    }
+  };
+
+  const renderBinaryTreeNode = (node, sideLabel = '') => {
+    if (!node) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 10px' }}>
+          <div style={{
+            background: 'rgba(30, 41, 59, 0.5)',
+            border: '2px dashed #475569',
+            borderRadius: '12px',
+            padding: '10px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            minWidth: '130px',
+            color: '#64748b'
+          }}>
+            <i className="fa-solid fa-user-plus" style={{ marginBottom: '6px', fontSize: '1rem' }}></i>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Open Slot</span>
+            {sideLabel && <span style={{ fontSize: '0.62rem', background: '#334155', padding: '1px 6px', borderRadius: '4px', marginTop: '4px', color: '#94a3b8' }}>{sideLabel}</span>}
+          </div>
+        </div>
+      );
+    }
+
+    const hasChildren = node.left || node.right;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 10px', position: 'relative' }}>
+        <div style={{
+          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+          border: '2px solid #10b981',
+          borderRadius: '12px',
+          padding: '10px 14px',
+          boxShadow: '0 6px 16px rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          minWidth: '130px',
+          zIndex: 2,
+          position: 'relative'
+        }}>
+          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
+            <i className="fa-solid fa-circle-user" style={{ color: '#10b981', fontSize: '1rem' }}></i>
+          </div>
+          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+            {node.name}
+          </span>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#34d399', fontFamily: 'monospace' }}>
+            {node.memberId}
+          </span>
+          {sideLabel && (
+            <span style={{ fontSize: '0.62rem', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '1px 6px', borderRadius: '4px', marginTop: '4px', color: '#34d399' }}>
+              {sideLabel}
+            </span>
+          )}
+        </div>
+
+        {hasChildren && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginTop: '0px' }}>
+            <div style={{ width: '2px', height: '18px', background: '#475569' }}></div>
+            <div style={{ display: 'flex', position: 'relative', justifyContent: 'center' }}>
+              {/* Connector Line */}
+              <div style={{
+                position: 'absolute',
+                top: '0px',
+                left: '75px',
+                right: '75px',
+                height: '2px',
+                background: '#475569',
+                zIndex: 1
+              }}></div>
+              
+              <div style={{ display: 'flex', gap: '20px', marginTop: '0px', position: 'relative' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{ width: '2px', height: '10px', background: '#475569' }}></div>
+                  {renderBinaryTreeNode(node.left, 'Left')}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div style={{ width: '2px', height: '10px', background: '#475569' }}></div>
+                  {renderBinaryTreeNode(node.right, 'Right')}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       {/* TAB 1: OVERVIEW */}
       {activeTab === 'overview' && (
         <>
-          <div className="welcome-hero-card">
-            <span className="hero-tag">Active SPL Investment Scheme</span>
-            <h2>Welcome Back, {member.name}!</h2>
-            <p>Your capital is actively deployed in PLAN-10 BD smart electronics distribution and high-yield consumer goods manufacturing in Gazipur, Bangladesh.</p>
-            
-            <div className="hero-quick-stats">
-              <div className="quick-stat-box">
-                <label>Member Account ID</label>
-                <span>{member.memberId}</span>
+          {/* --- INVESTOR VIEW --- */}
+          {(roleProfile === 'INVESTOR' || roleProfile === 'DUAL') && (
+            <>
+              {roleProfile === 'DUAL' && (
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#34d399', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <i className="fa-solid fa-chart-pie"></i> SPL Investment Portfolio
+                </div>
+              )}
+              
+              <div className="welcome-hero-card">
+                <span className="hero-tag">Active SPL Investment Scheme</span>
+                <h2>Welcome Back, {member.name}!</h2>
+                <p>Your capital is actively deployed in PLAN-10 BD smart electronics distribution and high-yield consumer goods manufacturing in Gazipur, Bangladesh.</p>
+                
+                <div className="hero-quick-stats">
+                  <div className="quick-stat-box">
+                    <label>Member Account ID</label>
+                    <span>{member.memberId}</span>
+                  </div>
+                  <div className="quick-stat-box">
+                    <label>Contract Tenure</label>
+                    <span>{stats.termMonths} Months</span>
+                  </div>
+                  <div className="quick-stat-box">
+                    <label>Completed Payouts</label>
+                    <span>{stats.payoutsCompletedCount} / {stats.termMonths} Months</span>
+                  </div>
+                </div>
               </div>
-              <div className="quick-stat-box">
-                <label>Contract Tenure</label>
-                <span>{stats.termMonths} Months</span>
-              </div>
-              <div className="quick-stat-box">
-                <label>Completed Payouts</label>
-                <span>{stats.payoutsCompletedCount} / {stats.termMonths} Months</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Metrics Grid */}
-          <div className="metrics-grid">
-            <div className="metric-card">
-              <div className="metric-icon-box green">
-                <i className="fa-solid fa-sack-dollar"></i>
-              </div>
-              <div className="metric-info">
-                <label>Invested Capital</label>
-                <h3>৳ {stats.capitalInvested.toLocaleString()}</h3>
-                <small><i className="fa-solid fa-circle-check"></i> 100% Capital Guaranteed</small>
-              </div>
-            </div>
+              {/* Metrics Grid */}
+              <div className="metrics-grid">
+                <div className="metric-card">
+                  <div className="metric-icon-box green">
+                    <i className="fa-solid fa-sack-dollar"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Invested Capital</label>
+                    <h3>৳ {stats.capitalInvested.toLocaleString()}</h3>
+                    <small><i className="fa-solid fa-circle-check"></i> 100% Capital Guaranteed</small>
+                  </div>
+                </div>
 
-            <div className="metric-card">
-              <div className="metric-icon-box blue">
-                <i className="fa-solid fa-hand-holding-dollar"></i>
-              </div>
-              <div className="metric-info">
-                <label>Monthly Total Return</label>
-                <h3>৳ {stats.monthlyTotalPayout.toLocaleString()}</h3>
-                <small>Profit (৳{stats.monthlyProfit.toLocaleString()}) + Refund (৳{stats.monthlyCapitalRefund.toLocaleString()})</small>
-              </div>
-            </div>
+                <div className="metric-card">
+                  <div className="metric-icon-box blue">
+                    <i className="fa-solid fa-hand-holding-dollar"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Monthly Total Return</label>
+                    <h3>৳ {stats.monthlyTotalPayout.toLocaleString()}</h3>
+                    <small>Profit (৳{stats.monthlyProfit.toLocaleString()}) + Refund (৳{stats.monthlyCapitalRefund.toLocaleString()})</small>
+                  </div>
+                </div>
 
-            <div className="metric-card">
-              <div className="metric-icon-box purple">
-                <i className="fa-solid fa-chart-line"></i>
-              </div>
-              <div className="metric-info">
-                <label>Total Disbursed To Date</label>
-                <h3>৳ {stats.totalPaidSoFar.toLocaleString()}</h3>
-                <small>{stats.payoutsCompletedCount} successful monthly transfers</small>
-              </div>
-            </div>
+                <div className="metric-card">
+                  <div className="metric-icon-box purple">
+                    <i className="fa-solid fa-chart-line"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Total Disbursed To Date</label>
+                    <h3>৳ {stats.totalPaidSoFar.toLocaleString()}</h3>
+                    <small>{stats.payoutsCompletedCount} successful monthly transfers</small>
+                  </div>
+                </div>
 
-            <div className="metric-card">
-              <div className="metric-icon-box amber">
-                <i className="fa-solid fa-gift"></i>
+                <div className="metric-card">
+                  <div className="metric-icon-box amber">
+                    <i className="fa-solid fa-gift"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Referral Earnings</label>
+                    <h3>৳ {referrals.totalEarnedBonus.toLocaleString()}</h3>
+                    <small>{referrals.totalTeam} Network Members</small>
+                  </div>
+                </div>
               </div>
-              <div className="metric-info">
-                <label>Referral Earnings</label>
-                <h3>৳ {referrals.totalEarnedBonus.toLocaleString()}</h3>
-                <small>{referrals.totalTeam} Network Members</small>
-              </div>
-            </div>
-          </div>
 
-          {/* Recent Payout Summary & Quick Actions */}
-          <div className="content-section-card">
-            <div className="section-card-header">
-              <h3><i className="fa-solid fa-clock-rotate-left"></i> Upcoming & Recent Monthly Payouts</h3>
-              <button 
-                onClick={() => setActiveTab('payouts')}
-                style={{ background: 'none', border: 'none', color: '#059669', fontWeight: 700, cursor: 'pointer' }}
-              >
-                View Full 33-Month Schedule &rarr;
-              </button>
-            </div>
-            
-            <div className="table-responsive">
-              <table className="dash-table">
-                <thead>
-                  <tr>
-                    <th>Month #</th>
-                    <th>Due Date</th>
-                    <th>Monthly Profit</th>
-                    <th>Capital Refund</th>
-                    <th>Total Payout</th>
-                    <th>Payment Method</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedule.slice(0, 5).map((row) => (
-                    <tr key={row.monthNumber}>
-                      <td><strong>Month {row.monthNumber}</strong></td>
-                      <td>{row.dueDate}</td>
-                      <td>৳ {row.profitAmount.toLocaleString()} BDT</td>
-                      <td>৳ {row.capitalRefund.toLocaleString()} BDT</td>
-                      <td><strong style={{ color: '#047857' }}>৳ {row.totalPayout.toLocaleString()} BDT</strong></td>
-                      <td>{row.method}</td>
-                      <td>
-                        <span className={`status-badge ${row.status.toLowerCase()}`}>
-                          <i className={`fa-solid ${row.status === 'PAID' ? 'fa-check-circle' : 'fa-clock'}`}></i> {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              {/* Recent Payout Summary */}
+              <div className="content-section-card" style={{ marginBottom: roleProfile === 'DUAL' ? '40px' : '0' }}>
+                <div className="section-card-header">
+                  <h3><i className="fa-solid fa-clock-rotate-left"></i> Upcoming & Recent Monthly Payouts</h3>
+                  <button 
+                    onClick={() => setActiveTab('payouts')}
+                    style={{ background: 'none', border: 'none', color: '#059669', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    View Full 33-Month Schedule &rarr;
+                  </button>
+                </div>
+                
+                <div className="table-responsive">
+                  <table className="dash-table">
+                    <thead>
+                      <tr>
+                        <th>Month #</th>
+                        <th>Due Date</th>
+                        <th>Monthly Profit</th>
+                        <th>Capital Refund</th>
+                        <th>Total Payout</th>
+                        <th>Payment Method</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schedule.slice(0, 5).map((row) => (
+                        <tr key={row.monthNumber}>
+                          <td><strong>Month {row.monthNumber}</strong></td>
+                          <td>{row.dueDate}</td>
+                          <td>৳ {row.profitAmount.toLocaleString()} BDT</td>
+                          <td>৳ {row.capitalRefund.toLocaleString()} BDT</td>
+                          <td><strong style={{ color: '#047857' }}>৳ {row.totalPayout.toLocaleString()} BDT</strong></td>
+                          <td>{row.method}</td>
+                          <td>
+                            <span className={`status-badge ${row.status.toLowerCase()}`}>
+                              <i className={`fa-solid ${row.status === 'PAID' ? 'fa-check-circle' : 'fa-clock'}`}></i> {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* --- BUYER VIEW --- */}
+          {(roleProfile === 'BUYER' || roleProfile === 'DUAL') && (
+            <>
+              {roleProfile === 'DUAL' && (
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#3b82f6', marginBottom: '16px', marginTop: '30px', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #334155', paddingTop: '30px' }}>
+                  <i className="fa-solid fa-cart-shopping"></i> Consumer Products Purchasing
+                </div>
+              )}
+
+              <div className="welcome-hero-card" style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)' }}>
+                <span className="hero-tag" style={{ background: '#2563eb' }}>Active Product Buyer Account</span>
+                <h2>Welcome Back, {member.name}!</h2>
+                <p>Explore your purchased consumer goods, track package shipments in real-time, and check your network referral tree details.</p>
+                
+                <div className="hero-quick-stats">
+                  <div className="quick-stat-box">
+                    <label>Member Account ID</label>
+                    <span>{member.memberId}</span>
+                  </div>
+                  <div className="quick-stat-box">
+                    <label>Total Items Ordered</label>
+                    <span>{orders.length} Products</span>
+                  </div>
+                  <div className="quick-stat-box">
+                    <label>Pending Deliveries</label>
+                    <span>{orders.filter(o => o.status !== 'DELIVERED' && o.status !== 'REJECTED').length} Items</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="metrics-grid">
+                <div className="metric-card">
+                  <div className="metric-icon-box green">
+                    <i className="fa-solid fa-cart-flatbed"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Total Products Ordered</label>
+                    <h3>{orders.length} Items</h3>
+                    <small><i className="fa-solid fa-circle-check"></i> Quality Guaranteed</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon-box blue">
+                    <i className="fa-solid fa-truck-ramp-box"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Active Shipments</label>
+                    <h3>{orders.filter(o => o.status === 'PROCESSING').length} Items</h3>
+                    <small>Currently in transit</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon-box purple">
+                    <i className="fa-solid fa-circle-check"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Completed Deliveries</label>
+                    <h3>{orders.filter(o => o.status === 'DELIVERED').length} Items</h3>
+                    <small>Successfully received</small>
+                  </div>
+                </div>
+
+                <div className="metric-card">
+                  <div className="metric-icon-box amber">
+                    <i className="fa-solid fa-wallet"></i>
+                  </div>
+                  <div className="metric-info">
+                    <label>Referral Account Balance</label>
+                    <h3>৳ {(dashData.wallet?.balance || 0).toLocaleString()}</h3>
+                    <small>Received from invitations</small>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Tracking & Shipment Stepper */}
+              {orders.length > 0 && selectedTrackingOrderId && renderOrderTracking()}
+
+              {/* Orders History Section */}
+              <div className="content-section-card">
+                <div className="section-card-header" style={{ marginBottom: '20px' }}>
+                  <div>
+                    <h3><i className="fa-solid fa-cart-flatbed"></i> My Product Orders</h3>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                      Track your product purchases and delivery processing status. Click any order row to track shipping status.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setActiveTab('orders')}
+                    style={{ background: 'none', border: 'none', color: '#3b82f6', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    View All Orders &rarr;
+                  </button>
+                </div>
+
+                {ordersLoading ? (
+                  <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
+                    <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: '1.8rem', marginBottom: '8px' }}></i>
+                    <p style={{ margin: 0 }}>Loading orders...</p>
+                  </div>
+                ) : orders.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8', background: '#0f172a', borderRadius: '8px', border: '1px solid #334155' }}>
+                    <i className="fa-solid fa-cart-shopping" style={{ fontSize: '2.5rem', color: '#475569', marginBottom: '12px', display: 'block' }}></i>
+                    <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#f1f5f9' }}>No orders found</p>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem' }}>Go to the homepage product gallery to place your order.</p>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="payout-schedule-table">
+                      <thead>
+                        <tr>
+                          <th>Order ID</th>
+                          <th>Date</th>
+                          <th>Product Name</th>
+                          <th>Price</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {orders.slice(0, 5).map((ord) => {
+                          let badgeBg = '#d97706';
+                          let statusText = 'Pending';
+                          if (ord.status === 'PROCESSING') {
+                            badgeBg = '#2563eb';
+                            statusText = 'Processing';
+                          } else if (ord.status === 'DELIVERED') {
+                            badgeBg = '#059669';
+                            statusText = 'Delivered';
+                          } else if (ord.status === 'REJECTED') {
+                            badgeBg = '#ef4444';
+                            statusText = 'Rejected';
+                          }
+
+                          const isSelected = ord.id === selectedTrackingOrderId;
+
+                          return (
+                            <tr 
+                              key={ord.id} 
+                              onClick={() => setSelectedTrackingOrderId(ord.id)}
+                              style={{
+                                cursor: 'pointer',
+                                backgroundColor: isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+                                borderLeft: isSelected ? '4px solid #2563eb' : 'none',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <td style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#38bdf8' }}>
+                                {isSelected && <i className="fa-solid fa-chevron-right text-primary" style={{ marginRight: '6px', fontSize: '0.75rem' }}></i>}
+                                {ord.id}
+                              </td>
+                              <td>{ord.orderedAt ? new Date(ord.orderedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A'}</td>
+                              <td style={{ fontWeight: 600 }}>{ord.productName}</td>
+                              <td style={{ fontWeight: 800, color: '#10b981' }}>৳{Math.round(ord.price).toLocaleString()}</td>
+                              <td>
+                                <span 
+                                  style={{
+                                    display: 'inline-block',
+                                    padding: '4px 10px',
+                                    borderRadius: '20px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    backgroundColor: badgeBg,
+                                    color: '#ffffff',
+                                    textTransform: 'uppercase'
+                                  }}
+                                >
+                                  {statusText}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -897,9 +1253,29 @@ export default function UserDashboardPage() {
             )}
           </div>
 
-          {/* Interactive Visual Referral Tree */}
-          <div className="content-section-card" style={{ padding: 0, overflow: 'hidden' }}>
-            {renderUnlimitedMultilevelTree()}
+          {/* Interactive Visual Referral Tree (Investor Binary Tree) */}
+          <div className="content-section-card" style={{ padding: '24px' }}>
+            <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <i className="fa-solid fa-sitemap text-primary"></i> My Investor Binary Tree Network
+            </h3>
+            <div style={{ 
+              overflowX: 'auto', 
+              padding: '30px 15px', 
+              background: '#030712', 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center',
+              width: '100%',
+              borderRadius: '12px'
+            }}>
+              {dashData?.investorBinaryTree ? (
+                renderBinaryTreeNode(dashData.investorBinaryTree)
+              ) : (
+                <div style={{ color: '#64748b', fontSize: '0.9rem', padding: '20px 0' }}>
+                  No Investor tree placement record found yet.
+                </div>
+              )}
+            </div>
           </div>
 
 
@@ -1189,66 +1565,9 @@ export default function UserDashboardPage() {
         </div>
       )}
 
-      {/* TAB 5: ORDERS & NOTIFICATIONS */}
+      {/* TAB 5: ORDERS */}
       {activeTab === 'orders' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Notifications / Alerts Section */}
-          <div className="content-section-card">
-            <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <i className="fa-solid fa-bell text-warning"></i> Recent Alerts & Notifications
-            </h3>
-            {orders.length === 0 ? (
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.9rem' }}>No new notifications.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {orders.map((ord) => {
-                  let alertBg = 'rgba(217, 119, 6, 0.08)';
-                  let alertBorder = 'rgba(217, 119, 6, 0.2)';
-                  let alertIcon = 'fa-hourglass-half text-warning';
-                  let alertText = `Order ${ord.id} for "${ord.productName}" is currently pending admin acceptance and review.`;
-
-                  if (ord.status === 'PROCESSING') {
-                    alertBg = 'rgba(37, 99, 235, 0.08)';
-                    alertBorder = 'rgba(37, 99, 235, 0.2)';
-                    alertIcon = 'fa-truck-fast text-primary';
-                    alertText = `Great news! Your order ${ord.id} for "${ord.productName}" has been accepted and is currently in processing.`;
-                  } else if (ord.status === 'DELIVERED') {
-                    alertBg = 'rgba(16, 185, 129, 0.08)';
-                    alertBorder = 'rgba(16, 185, 129, 0.2)';
-                    alertIcon = 'fa-circle-check text-success';
-                    alertText = `Success! Your order ${ord.id} for "${ord.productName}" has been confirmed as delivered.`;
-                  } else if (ord.status === 'REJECTED') {
-                    alertBg = 'rgba(239, 68, 68, 0.08)';
-                    alertBorder = 'rgba(239, 68, 68, 0.2)';
-                    alertIcon = 'fa-triangle-exclamation text-danger';
-                    alertText = `Notice: Your order ${ord.id} for "${ord.productName}" was declined by the admin panel. Please check with support.`;
-                  }
-
-                  return (
-                    <div 
-                      key={ord.id} 
-                      style={{
-                        background: alertBg,
-                        border: `1px solid ${alertBorder}`,
-                        borderRadius: '8px',
-                        padding: '12px 16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        fontSize: '0.88rem',
-                        color: '#f8fafc',
-                        lineHeight: '1.4'
-                      }}
-                    >
-                      <i className={`fa-solid ${alertIcon}`} style={{ fontSize: '1.2rem' }}></i>
-                      <span>{alertText}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           {/* Visual Tracking Timeline Stepper */}
           {renderOrderTracking()}
 
@@ -1345,6 +1664,296 @@ export default function UserDashboardPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* TAB: PRODUCTS BUYER TREE */}
+      {activeTab === 'buyerTree' && (
+        <div className="content-section-card">
+          <div className="section-card-header" style={{ marginBottom: '20px' }}>
+            <div>
+              <h3 style={{ margin: 0 }}><i className="fa-solid fa-sitemap text-success"></i> My Products Buyer Tree Network</h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+                Your auto-pooling position and binary downline network in the Products Buyer tree.
+              </p>
+            </div>
+          </div>
+          
+          {/* Scrollable Binary Tree Container */}
+          <div style={{ 
+            overflowX: 'auto', 
+            padding: '30px 15px', 
+            background: '#030712', 
+            display: 'flex', 
+            flexDirection: 'column',
+            alignItems: 'center',
+            width: '100%',
+            borderRadius: '12px'
+          }}>
+            {dashData?.buyerBinaryTree ? (
+              renderBinaryTreeNode(dashData.buyerBinaryTree)
+            ) : (
+              <div style={{ color: '#64748b', fontSize: '0.9rem', padding: '20px 0' }}>
+                No Products Buyer placement record found yet. Purchase products to get automatically placed in the tree.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: WALLET & TRANSACTION HISTORY */}
+      {activeTab === 'wallet' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Wallet Balance Card */}
+          <div className="content-section-card wallet-balance-card">
+            <div className="wallet-balance-inner">
+              <div>
+                <span className="wallet-balance-title">Available Wallet Balance</span>
+                <h2 className="wallet-balance-amount">৳ {Math.round(dashData?.wallet?.balance || 0).toLocaleString()} BDT</h2>
+              </div>
+              <div className="wallet-balance-icon-box">
+                <i className="fa-solid fa-wallet" style={{ margin: 'auto' }}></i>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }} className="wallet-grid-mobile">
+            {/* Request Withdrawal Form */}
+            <div className="content-section-card">
+              <h3 style={{ margin: '0 0 16px 0' }}><i className="fa-solid fa-money-bill-transfer"></i> Request Withdrawal</h3>
+              <form onSubmit={handleRequestWithdraw}>
+                <div className="form-group mb-3">
+                  <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Amount (৳ BDT) *</span>
+                    <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600 }}>Limit: ৳1,000 - ৳25,000</span>
+                  </label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    required
+                    min="1000"
+                    max="25000"
+                    placeholder="Enter amount to withdraw"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                  />
+                </div>
+                <div className="form-group mb-3">
+                  <label>Payment Method *</label>
+                  {/* Custom dropdown — fully constrained, no viewport overflow */}
+                  <div className="custom-select-wrapper" ref={methodDropdownRef}>
+                    <button
+                      type="button"
+                      className="custom-select-btn"
+                      onClick={() => setShowMethodDropdown(prev => !prev)}
+                      aria-haspopup="listbox"
+                      aria-expanded={showMethodDropdown}
+                    >
+                      <span>
+                        {withdrawMethod === 'bKash' && 'bKash (Mobile Wallet)'}
+                        {withdrawMethod === 'Nagad' && 'Nagad (Mobile Wallet)'}
+                        {withdrawMethod === 'Rocket' && 'Rocket (Mobile Wallet)'}
+                        {withdrawMethod === 'Bank Transfer' && 'Bank Wire Transfer'}
+                      </span>
+                      <i className={`fa-solid fa-chevron-${showMethodDropdown ? 'up' : 'down'}`} style={{ fontSize: '0.75rem', color: '#94a3b8' }}></i>
+                    </button>
+                    {showMethodDropdown && (
+                      <ul className="custom-select-list" role="listbox">
+                        {[
+                          { value: 'bKash',         label: 'bKash (Mobile Wallet)',  icon: '📱' },
+                          { value: 'Nagad',         label: 'Nagad (Mobile Wallet)',  icon: '📱' },
+                          { value: 'Rocket',        label: 'Rocket (Mobile Wallet)', icon: '📱' },
+                          { value: 'Bank Transfer', label: 'Bank Wire Transfer',      icon: '🏦' },
+                        ].map(opt => (
+                          <li
+                            key={opt.value}
+                            role="option"
+                            aria-selected={withdrawMethod === opt.value}
+                            className={`custom-select-option${withdrawMethod === opt.value ? ' selected' : ''}`}
+                            onClick={() => { setWithdrawMethod(opt.value); setShowMethodDropdown(false); }}
+                          >
+                            <span>{opt.icon}</span>
+                            <span>{opt.label}</span>
+                            {withdrawMethod === opt.value && <i className="fa-solid fa-check" style={{ marginLeft: 'auto', color: '#10b981', fontSize: '0.8rem' }}></i>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+                <div className="form-group mb-3">
+                  <label>Payment Account Number / Details *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    required
+                    placeholder="Enter account/wallet number or details"
+                    value={paymentNumber}
+                    onChange={(e) => setPaymentNumber(e.target.value)}
+                  />
+                </div>
+
+                {withdrawStatusMsg.text && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    marginBottom: '16px',
+                    fontSize: '0.88rem',
+                    fontWeight: 600,
+                    backgroundColor: withdrawStatusMsg.type === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                    color: withdrawStatusMsg.type === 'success' ? '#34d399' : '#ef4444',
+                    border: `1px solid ${withdrawStatusMsg.type === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                  }}>
+                    {withdrawStatusMsg.text}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={submittingWithdraw}
+                  className="btn btn-primary w-100"
+                  style={{ width: '100%', padding: '12px', borderRadius: '8px', fontWeight: 700 }}
+                >
+                  {submittingWithdraw ? 'Processing...' : 'Submit Withdrawal Request'}
+                </button>
+              </form>
+            </div>
+
+            {/* Withdrawal Status History */}
+            <div className="content-section-card">
+              <h3 style={{ margin: '0 0 16px 0' }}><i className="fa-solid fa-clock-rotate-left"></i> Withdrawal Requests</h3>
+              {!dashData?.withdrawals || dashData.withdrawals.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>No withdrawal requests found.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+                  {dashData.withdrawals.map((req) => (
+                    <div key={req.id} className="withdraw-request-item">
+                      <div>
+                        <strong style={{ display: 'block', color: '#f1f5f9' }}>৳ {req.amount} BDT</strong>
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          via {req.method} ({req.paymentNumber || 'N/A'}) | {new Date(req.requestedAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <span className={`status-badge ${req.status.toLowerCase()}`}>{req.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Wallet Transaction History */}
+          <div className="content-section-card">
+            <h3 style={{ margin: '0 0 16px 0' }}><i className="fa-solid fa-list-check"></i> Transaction History</h3>
+            {!dashData?.wallet?.transactions || dashData.wallet.transactions.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '45px 0', color: '#64748b' }}>No transactions recorded yet.</div>
+            ) : (
+              <div className="table-responsive">
+                <table className="payout-schedule-table">
+                  <thead>
+                    <tr>
+                      <th>Transaction ID</th>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashData.wallet.transactions.map((txn) => (
+                      <tr key={txn.id}>
+                        <td style={{ fontFamily: 'monospace', fontWeight: 600, color: '#38bdf8' }}>{txn.id}</td>
+                        <td>{new Date(txn.date).toLocaleDateString()}</td>
+                        <td>
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '12px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            backgroundColor: txn.type === 'WITHDRAW' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: txn.type === 'WITHDRAW' ? '#f87171' : '#34d399'
+                          }}>
+                            {txn.type}
+                          </span>
+                        </td>
+                        <td>{txn.description}</td>
+                        <td style={{ fontWeight: 800, color: txn.amount > 0 ? '#10b981' : '#ef4444' }}>
+                          {txn.amount > 0 ? '+' : ''}৳ {Math.round(txn.amount).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 7: NOTIFICATIONS & MESSAGES */}
+      {activeTab === 'notifications' && (
+        <div className="content-section-card">
+          <h3 style={{ margin: '0 0 20px 0' }}><i className="fa-solid fa-envelope-open-text text-primary"></i> Notifications &amp; Message Center</h3>
+          {!dashData?.notifications || dashData.notifications.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+              <i className="fa-regular fa-bell-slash" style={{ fontSize: '3rem', color: '#334155', marginBottom: '16px', display: 'block' }}></i>
+              <h4>All Clean! No new alerts.</h4>
+              <p style={{ margin: 0, fontSize: '0.85rem' }}>We will notify you here about your order status, tree changes, and wallet payouts.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {dashData.notifications.map((notif) => {
+                let notifIcon = 'fa-info-circle text-primary';
+                let notifBg = 'rgba(37, 99, 235, 0.05)';
+                let notifBorder = 'rgba(37, 99, 235, 0.15)';
+
+                if (notif.type === 'WALLET') {
+                  notifIcon = 'fa-wallet text-success';
+                  notifBg = 'rgba(16, 185, 129, 0.05)';
+                  notifBorder = 'rgba(16, 185, 129, 0.15)';
+                } else if (notif.type === 'ORDER') {
+                  notifIcon = 'fa-cart-shopping text-warning';
+                  notifBg = 'rgba(217, 119, 6, 0.05)';
+                  notifBorder = 'rgba(217, 119, 6, 0.15)';
+                } else if (notif.type === 'INVESTMENT') {
+                  notifIcon = 'fa-money-bill-trend-up text-info';
+                  notifBg = 'rgba(6, 182, 212, 0.05)';
+                  notifBorder = 'rgba(6, 182, 212, 0.15)';
+                }
+
+                return (
+                  <div key={notif.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    padding: '16px 20px',
+                    background: notifBg,
+                    border: `1px solid ${notifBorder}`,
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    position: 'relative'
+                  }}>
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      <i className={`fa-solid ${notifIcon}`} style={{ fontSize: '1.2rem' }}></i>
+                    </div>
+                    <div style={{ flexGrow: 1 }}>
+                      <p style={{ margin: '0 0 4px 0', fontSize: '0.92rem', color: '#f1f5f9', fontWeight: 600 }}>{notif.message}</p>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{new Date(notif.timestamp).toLocaleString()}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 
-export default function AdminApplicationsPage() {
+export default function AdminBuyerApplicationsPage() {
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
@@ -17,11 +17,12 @@ export default function AdminApplicationsPage() {
       const res = await fetch('/api/applications');
       const data = await res.json();
       if (data.success) {
-        const splApps = data.applications.filter(a => a.purpose !== 'Buy Product');
-        setApps(splApps);
+        // Filter specifically for "Buy Product" mode
+        const buyerApps = data.applications.filter(a => a.purpose === 'Buy Product');
+        setApps(buyerApps);
       }
     } catch (err) {
-      console.error('Error fetching applications');
+      console.error('Error fetching buyer applications');
     } finally {
       setLoading(false);
     }
@@ -36,7 +37,7 @@ export default function AdminApplicationsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setMessage(`Application ${id} status updated to ${newStatus}`);
+        setMessage(`Buyer Application ${id} status updated to ${newStatus}`);
         fetchApplications();
         window.dispatchEvent(new CustomEvent('applications-updated'));
         setTimeout(() => setMessage(''), 3000);
@@ -55,7 +56,7 @@ export default function AdminApplicationsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setMessage(`Application ${id} deleted permanently.`);
+        setMessage(`Buyer Application ${id} deleted permanently.`);
         fetchApplications();
         window.dispatchEvent(new CustomEvent('applications-updated'));
         setTimeout(() => setMessage(''), 3000);
@@ -72,18 +73,21 @@ export default function AdminApplicationsPage() {
     return a.status === filter;
   });
 
-  const formatBDT = (amt) => '৳' + Math.round(Number(amt)).toLocaleString('en-IN');
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h2>Investor Application Processing</h2>
+        <div>
+          <h2>Product Buyer Applications</h2>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '4px' }}>
+            Process applications from users registering via direct product purchase or the landing page "Order Now" flow.
+          </p>
+        </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           {['ALL', 'PENDING', 'APPROVED', 'REJECTED'].map((st) => (
             <button
               key={st}
               className={`btn-action ${filter === st ? 'btn-view' : ''}`}
-              style={{ background: filter === st ? '#2563eb' : '#e2e8f0', color: filter === st ? '#fff' : '#475569' }}
+              style={{ background: filter === st ? '#10b981' : '#e2e8f0', color: filter === st ? '#fff' : '#475569' }}
               onClick={() => setFilter(st)}
             >
               {st}
@@ -101,16 +105,17 @@ export default function AdminApplicationsPage() {
       <div className="card-table-container">
         {loading ? (
           <p style={{ padding: '24px' }}>Loading application records...</p>
+        ) : filteredApps.length === 0 ? (
+          <p style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No buyer applications found.</p>
         ) : (
           <table className="admin-table">
             <thead>
               <tr>
                 <th>Application ID</th>
-                <th>Applicant Name & NID</th>
+                <th>Buyer Name & NID</th>
                 <th>Contact Phone</th>
-                <th>Capital Amount</th>
-                <th>Tenure</th>
-                <th>Nominee Details</th>
+                <th>Product / Sector</th>
+                <th>Sponsor ID</th>
                 <th>Status</th>
                 <th>Decision Actions</th>
               </tr>
@@ -121,14 +126,18 @@ export default function AdminApplicationsPage() {
                   <td><strong>{app.id}</strong></td>
                   <td>
                     <div><strong>{app.applicantName}</strong></div>
-                    <small style={{ color: '#64748b' }}>NID: {app.nid}</small>
+                    <small style={{ color: '#64748b' }}>NID: {app.nid || 'N/A'}</small>
                   </td>
                   <td>{app.phone}</td>
-                  <td><strong style={{ color: '#059669' }}>{formatBDT(app.capitalAmount)}</strong></td>
-                  <td>{app.durationMonths} Mos</td>
                   <td>
-                    <div>{app.nomineeName || 'N/A'}</div>
-                    <small style={{ color: '#64748b' }}>Rel: {app.relation || 'N/A'}</small>
+                    <div><span style={{ background: '#334155', padding: '2px 8px', borderRadius: '6px', fontSize: '0.78rem', color: '#e2e8f0', fontWeight: 600 }}>{app.productName || 'Direct Buyer Registration'}</span></div>
+                  </td>
+                  <td>
+                    {app.referredBy ? (
+                      <span style={{ color: '#38bdf8', fontWeight: 600, fontFamily: 'monospace' }}>{app.referredBy}</span>
+                    ) : (
+                      <span style={{ color: '#64748b', fontStyle: 'italic' }}>None</span>
+                    )}
                   </td>
                   <td>
                     <span className={`badge-status badge-${app.status.toLowerCase()}`}>
