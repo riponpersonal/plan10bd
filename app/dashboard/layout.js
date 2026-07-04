@@ -83,7 +83,7 @@ export default function DashboardLayout({ children }) {
                   <div className="nav-popover-menu">
                     <div className="nav-popover-header">
                       <div className="user-logo-icon small">P10</div>
-                      <span>PLAN-10 Portal</span>
+                      <span>My Profile</span>
                     </div>
 
                     <button 

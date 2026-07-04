@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDataStore, updatePayoutStatus, deletePayout } from '@/app/lib/dataStore';
+import { getDataStore, updatePayoutStatus, deletePayout, getPayouts } from '@/app/lib/dataStore';
 
 function checkAdminRole(request) {
   const role = request.headers.get('x-admin-role');
@@ -7,8 +7,8 @@ function checkAdminRole(request) {
 }
 
 export async function GET() {
-  const store = getDataStore();
-  return NextResponse.json({ success: true, payouts: store.payouts });
+  const payouts = getPayouts();
+  return NextResponse.json({ success: true, payouts });
 }
 
 export async function PATCH(request) {

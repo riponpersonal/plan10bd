@@ -12,6 +12,19 @@ export default function AdminApplicationsPage() {
     fetchApplications();
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const statusParam = params.get('status');
+      if (statusParam) {
+        const upper = statusParam.toUpperCase();
+        if (['ALL', 'PENDING', 'APPROVED', 'REJECTED'].includes(upper)) {
+          setFilter(upper);
+        }
+      }
+    }
+  }, []);
+
   async function fetchApplications() {
     try {
       const res = await fetch('/api/applications');

@@ -4,7 +4,7 @@ import { bindReferralCode } from '@/app/lib/dataStore';
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { identifier, referralCode } = body;
+    const { identifier, referralCode, type } = body;
 
     if (!identifier || !referralCode) {
       return NextResponse.json(
@@ -13,7 +13,7 @@ export async function POST(request) {
       );
     }
 
-    const result = bindReferralCode(identifier, referralCode);
+    const result = bindReferralCode(identifier, referralCode, type || 'investor');
 
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });

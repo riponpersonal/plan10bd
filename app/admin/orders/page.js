@@ -12,6 +12,19 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const statusParam = params.get('status');
+      if (statusParam) {
+        const upper = statusParam.toUpperCase();
+        if (['ALL', 'PENDING', 'PROCESSING', 'DELIVERED', 'REJECTED'].includes(upper)) {
+          setFilter(upper);
+        }
+      }
+    }
+  }, []);
+
   async function fetchOrders() {
     try {
       const res = await fetch('/api/orders', {

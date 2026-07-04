@@ -24,7 +24,40 @@ function checkAdminRole(request) {
 
 export async function GET() {
   const store = getDataStore();
-  return NextResponse.json({ success: true, members: store.members });
+  
+  // Classify each member dynamically
+  const enrichedMembers = store.members.map(member => {
+    // Check if they have an approved investment application or non-zero capital
+    const hasInvestmentApp = store.applications.some(
+      app => app.phone === member.phone && app.purpose === 'Investment' && app.status === 'APPROVED'
+    );
+    const isInvestor = hasInvestmentApp || (member.capitalInvested > 0);
+
+    // Check if they have an approved buyer application or any orders
+    const hasBuyerApp = store.applications.some(
+      app => app.phone === member.phone && app.purpose === 'Buy Product' && app.status === 'APPROVED'
+    );
+    const hasOrders = store.orders.some(
+      order => order.phone === member.phone || order.userId === member.memberId || order.memberId === member.memberId
+    );
+    const isBuyer = hasBuyerApp || hasOrders;
+
+    let category = 'BOTH';
+    if (isInvestor && !isBuyer) {
+      category = 'INVESTOR';
+    } else if (!isInvestor && isBuyer) {
+      category = 'BUYER';
+    } else if (!isInvestor && !isBuyer) {
+      category = member.capitalInvested > 0 ? 'INVESTOR' : 'BUYER';
+    }
+
+    return {
+      ...member,
+      category
+    };
+  });
+
+  return NextResponse.json({ success: true, members: enrichedMembers });
 }
 
 export async function DELETE(request) {

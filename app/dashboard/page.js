@@ -31,6 +31,9 @@ export default function UserDashboardPage() {
   const [inputRefCode, setInputRefCode] = useState('');
   const [bindingRef, setBindingRef] = useState(false);
   const [refBindMsg, setRefBindMsg] = useState({ type: '', text: '' });
+  const [buyerInputRefCode, setBuyerInputRefCode] = useState('');
+  const [bindingBuyerRef, setBindingBuyerRef] = useState(false);
+  const [buyerRefBindMsg, setBuyerRefBindMsg] = useState({ type: '', text: '' });
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawMethod, setWithdrawMethod] = useState('bKash');
   const [showMethodDropdown, setShowMethodDropdown] = useState(false);
@@ -217,6 +220,42 @@ export default function UserDashboardPage() {
     }
   };
 
+  const handleBindBuyerReferralCode = async (e) => {
+    e.preventDefault();
+    if (!dashData || !dashData.member || !buyerInputRefCode.trim()) return;
+    setBindingBuyerRef(true);
+    setBuyerRefBindMsg({ type: '', text: '' });
+    try {
+      const res = await fetch('/api/user/referral', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: dashData.member.memberId || dashData.member.phone,
+          referralCode: buyerInputRefCode.trim(),
+          type: 'buyer'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBuyerRefBindMsg({ type: 'success', text: data.message });
+        setBuyerInputRefCode('');
+        let username = dashData.member.memberId || dashData.member.phone;
+        const freshRes = await fetch(`/api/user/dashboard?username=${encodeURIComponent(username)}`);
+        const freshData = await freshRes.json();
+        if (freshData.success) {
+          setDashData(freshData.data);
+        }
+      } else {
+        setBuyerRefBindMsg({ type: 'error', text: data.message || 'Invalid referral code.' });
+      }
+    } catch (err) {
+      console.error(err);
+      setBuyerRefBindMsg({ type: 'error', text: 'Error processing referral code. Please try again.' });
+    } finally {
+      setBindingBuyerRef(false);
+    }
+  };
+
   const fallbackCopyText = (text) => {
     try {
       const textArea = document.createElement('textarea');
@@ -270,7 +309,8 @@ export default function UserDashboardPage() {
     );
   }
 
-  const { member, schedule, referrals } = dashData;
+  const { member, schedule, referrals, buyerReferrals } = dashData;
+  const bReferrals = buyerReferrals || { referralCode: member?.memberId || '', totalDirect: 0, totalTeam: 0, totalEarnedBonus: 0, tree: [] };
   const stats = {
     capitalInvested: dashData.stats?.capitalInvested || 0,
     termMonths: dashData.stats?.termMonths || 0,
@@ -1669,36 +1709,200 @@ export default function UserDashboardPage() {
 
       {/* TAB: PRODUCTS BUYER TREE */}
       {activeTab === 'buyerTree' && (
-        <div className="content-section-card">
-          <div className="section-card-header" style={{ marginBottom: '20px' }}>
+        <>
+          <div className="referral-box-header" style={{ borderLeftColor: '#3b82f6' }}>
             <div>
-              <h3 style={{ margin: 0 }}><i className="fa-solid fa-sitemap text-success"></i> My Products Buyer Tree Network</h3>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-                Your auto-pooling position and binary downline network in the Products Buyer tree.
+              <h3 style={{ margin: '0 0 4px 0', color: '#93c5fd', fontSize: '1.2rem', fontWeight: 800 }}>
+                <i className="fa-solid fa-share-nodes"></i> PLAN-10 Products Buyer Sponsor Program
+              </h3>
+              <p style={{ margin: 0, color: '#60a5fa', fontSize: '0.88rem' }}>
+                Earn a flat ৳500 sponsor bonus on all direct product buyer referrals (Level 1)!
               </p>
             </div>
+
+            <div className="referral-link-input-group">
+              <i className="fa-solid fa-link" style={{ color: '#2563eb' }}></i>
+              <input 
+                type="text" 
+                readOnly 
+                value={`${typeof window !== 'undefined' ? window.location.origin : 'https://plan10bd.com'}/#apply?ref=${bReferrals.referralCode}`} 
+              />
+              <button className="btn-copy-link" style={{ backgroundColor: '#2563eb' }} onClick={handleCopyLink}>
+                {copySuccess ? <><i className="fa-solid fa-check"></i> Copied!</> : <><i className="fa-solid fa-copy"></i> Copy Link</>}
+              </button>
+            </div>
+
+            <div style={{ width: '100%', marginTop: '16px', borderTop: '1px dashed rgba(59, 130, 246, 0.3)', paddingTop: '12px', fontSize: '0.8rem', color: '#93c5fd', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className="fa-solid fa-circle-info" style={{ color: '#60a5fa' }}></i>
+              <span><strong>Referral Notice:</strong> Buyer referral bonus is flat ৳500 only for direct L1 sponsor connections.</span>
+            </div>
           </div>
-          
-          {/* Scrollable Binary Tree Container */}
-          <div style={{ 
-            overflowX: 'auto', 
-            padding: '30px 15px', 
-            background: '#030712', 
-            display: 'flex', 
-            flexDirection: 'column',
-            alignItems: 'center',
-            width: '100%',
-            borderRadius: '12px'
-          }}>
-            {dashData?.buyerBinaryTree ? (
-              renderBinaryTreeNode(dashData.buyerBinaryTree)
-            ) : (
-              <div style={{ color: '#64748b', fontSize: '0.9rem', padding: '20px 0' }}>
-                No Products Buyer placement record found yet. Purchase products to get automatically placed in the tree.
+
+          <div className="metrics-grid" style={{ marginBottom: '28px' }}>
+            <div className="metric-card">
+              <div className="metric-icon-box blue" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                <i className="fa-solid fa-users"></i>
+              </div>
+              <div className="metric-info">
+                <label>Direct Buyer Referrals (L1)</label>
+                <h3>{bReferrals.totalDirect} Members</h3>
+                <small>৳500 Bonus per connection</small>
+              </div>
+            </div>
+
+            <div className="metric-card">
+              <div className="metric-icon-box blue" style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
+                <i className="fa-solid fa-diagram-project"></i>
+              </div>
+              <div className="metric-info">
+                <label>Total Buyer Network Size</label>
+                <h3>{bReferrals.totalTeam} Members</h3>
+                <small>Direct & Indirect downlines</small>
+              </div>
+            </div>
+
+            <div className="metric-card">
+              <div className="metric-icon-box purple" style={{ backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
+                <i className="fa-solid fa-coins"></i>
+              </div>
+              <div className="metric-info">
+                <label>Total Buyer Commissions</label>
+                <h3>৳ {bReferrals.totalEarnedBonus.toLocaleString()} BDT</h3>
+                <small>Disbursed directly to your wallet</small>
+              </div>
+            </div>
+          </div>
+
+          {/* Sponsor Referral Code Link Section */}
+          <div className="content-section-card" style={{ marginBottom: '28px' }}>
+            <div className="section-card-header">
+              <div>
+                <h3 style={{ margin: 0 }}><i className="fa-solid fa-user-plus"></i> Join Under a Buyer Sponsor</h3>
+                <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, display: 'block', marginTop: '4px' }}>
+                  Enter your inviter's referral code to connect your account to their Buyer Tree network hierarchy.
+                </span>
+                {!member.buyerReferredBy && (
+                  <span style={{ fontSize: '0.8rem', color: '#fbbf24', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                    <i className="fa-solid fa-triangle-exclamation"></i> Note: A buyer sponsor referral code can only be submitted ONCE per member account.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {buyerRefBindMsg.text && (
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                backgroundColor: buyerRefBindMsg.type === 'success' ? '#064e3b' : '#7f1d1d',
+                color: buyerRefBindMsg.type === 'success' ? '#a7f3d0' : '#fecaca',
+                border: `1px solid ${buyerRefBindMsg.type === 'success' ? '#059669' : '#dc2626'}`
+              }}>
+                <i className={`fa-solid ${buyerRefBindMsg.type === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation'}`}></i>
+                {buyerRefBindMsg.text}
               </div>
             )}
+
+            {member.buyerReferredBy ? (
+              <div style={{ background: '#0f172a', padding: '18px 22px', borderRadius: '12px', border: '1px solid #1e293b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <span style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>Connected Buyer Sponsor</span>
+                  <strong style={{ fontSize: '1.1rem', color: '#3b82f6' }}><i className="fa-solid fa-link"></i> {member.buyerReferredBy}</strong>
+                </div>
+                <span className="status-badge paid" style={{ fontSize: '0.85rem', padding: '6px 14px', backgroundColor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' }}>
+                  <i className="fa-solid fa-lock"></i> Sponsor Linked (Locked)
+                </span>
+              </div>
+            ) : (
+              <form onSubmit={handleBindBuyerReferralCode} style={{ background: '#0f172a', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ flex: 1, minWidth: '240px' }}>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase' }}>
+                      Enter Buyer Sponsor Referral Code *
+                    </label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. Plan10-101 or Sponsor Mobile"
+                      value={buyerInputRefCode}
+                      onChange={(e) => setBuyerInputRefCode(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #475569',
+                        borderRadius: '8px',
+                        color: '#ffffff',
+                        fontSize: '0.95rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                  <div style={{ marginTop: '22px' }}>
+                    <button 
+                      type="submit" 
+                      disabled={bindingBuyerRef}
+                      style={{
+                        backgroundColor: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '11px 24px',
+                        borderRadius: '8px',
+                        fontSize: '0.92rem',
+                        fontWeight: 700,
+                        cursor: bindingBuyerRef ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+                      }}
+                    >
+                      {bindingBuyerRef ? (
+                        <>
+                          <i className="fa-solid fa-spinner fa-spin"></i> Validating...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fa-solid fa-lock"></i> Submit Referral Code (One-Time)
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
-        </div>
+
+          {/* Visual Products Buyer Binary Tree */}
+          <div className="content-section-card" style={{ padding: '24px' }}>
+            <h3 style={{ margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <i className="fa-solid fa-sitemap text-success"></i> My Products Buyer Tree Network
+            </h3>
+            <div style={{ 
+              overflowX: 'auto', 
+              padding: '30px 15px', 
+              background: '#030712', 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center',
+              width: '100%',
+              borderRadius: '12px'
+            }}>
+              {dashData?.buyerBinaryTree ? (
+                renderBinaryTreeNode(dashData.buyerBinaryTree)
+              ) : (
+                <div style={{ color: '#64748b', fontSize: '0.9rem', padding: '20px 0' }}>
+                  No Products Buyer placement record found yet. Purchase products to get automatically placed in the tree.
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       {/* TAB 6: WALLET & TRANSACTION HISTORY */}

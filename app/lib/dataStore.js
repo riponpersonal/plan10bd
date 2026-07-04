@@ -350,6 +350,39 @@ export function getUserDashboardData(identifier) {
 
   const tree = buildTreeNodes(level1, 1);
 
+  // Generate Buyer Referral Tree & Bonus Calculations
+  // Level 1: Direct buyer referrals
+  const buyerLevel1 = dataStore.members.filter(m => m.buyerReferredBy === activeMember.memberId);
+  
+  let totalBuyerEarnedBonus = 0;
+  let totalBuyerTeamCount = 0;
+
+  const buildBuyerTreeNodes = (memberList, levelNum) => {
+    return memberList.map(m => {
+      // Direct referral bonus is flat 500 BDT for L1 only
+      const bonus = levelNum === 1 ? 500 : 0;
+      totalBuyerEarnedBonus += bonus;
+      totalBuyerTeamCount += 1;
+      
+      const children = buildBuyerTreeNodes(
+        dataStore.members.filter(sub => sub.buyerReferredBy === m.memberId), 
+        levelNum + 1
+      );
+
+      return {
+        memberId: m.memberId,
+        name: m.name,
+        phone: m.phone,
+        joinDate: m.joinDate,
+        level: levelNum,
+        bonusEarned: bonus,
+        children
+      };
+    });
+  };
+
+  const buyerTree = buildBuyerTreeNodes(buyerLevel1, 1);
+
   const ordersList = dataStore.orders ? dataStore.orders.filter(o => o.username === activeMember.phone || o.username === activeMember.memberId) : [];
   
   const hasInvested = activeMember && Number(activeMember.capitalInvested) > 0;
@@ -398,6 +431,13 @@ export function getUserDashboardData(identifier) {
       totalTeamVolume,
       totalEarnedBonus,
       tree
+    },
+    buyerReferrals: {
+      referralCode: activeMember.memberId,
+      totalDirect: buyerLevel1.length,
+      totalTeam: totalBuyerTeamCount,
+      totalEarnedBonus: totalBuyerEarnedBonus,
+      tree: buyerTree
     },
     roleProfile,
     wallet,
@@ -593,6 +633,66 @@ export function updateApplicationStatus(id, status) {
   return app;
 }
 
+export function getPayouts() {
+  if (!dataStore.payouts) {
+    dataStore.payouts = [];
+  }
+  let modified = false;
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  if (dataStore.members && Array.isArray(dataStore.members)) {
+    for (const member of dataStore.members) {
+      if (member.capitalInvested > 0 && member.termMonths > 0 && member.status === 'ACTIVE') {
+        for (let m = 1; m <= member.termMonths; m++) {
+          const exists = dataStore.payouts.some(
+            (p) => p.memberId === member.memberId && p.monthNumber === m
+          );
+          if (!exists) {
+            let dueDateStr = todayStr;
+            try {
+              const joinDate = member.joinDate || todayStr;
+              const pDate = new Date(joinDate);
+              if (!isNaN(pDate.getTime())) {
+                pDate.setMonth(pDate.getMonth() + m);
+                dueDateStr = pDate.toISOString().split('T')[0];
+              }
+            } catch (e) {
+              console.error('Invalid date parsing for member', member.memberId, e);
+            }
+            const status = dueDateStr < todayStr ? 'PAID' : 'PENDING';
+
+            const newPayout = {
+              id: `PAY-${member.memberId}-${m}`,
+              memberId: member.memberId,
+              memberName: member.name,
+              monthNumber: m,
+              dueDate: dueDateStr,
+              profitAmount: member.monthlyProfit || 0,
+              capitalRefund: member.monthlyCapitalRefund || 0,
+              totalPayout: member.monthlyTotalPayout || 0,
+              status: status,
+              method: 'Bank Wire / bKash',
+              createdAt: new Date().toISOString()
+            };
+            dataStore.payouts.push(newPayout);
+            modified = true;
+          }
+        }
+      }
+    }
+  }
+
+  if (modified) {
+    saveDataStoreToFile(dataStore);
+  }
+
+  return [...dataStore.payouts].sort((a, b) => {
+    if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+    if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
+    return new Date(a.dueDate) - new Date(b.dueDate);
+  });
+}
+
 export function updatePayoutStatus(id, status) {
   const payout = dataStore.payouts.find((p) => p.id === id);
   if (payout) {
@@ -781,7 +881,7 @@ export function updateMemberProfile(identifier, updateData) {
   return updated;
 }
 
-export function bindReferralCode(memberIdentifier, referrerCode) {
+export function bindReferralCode(memberIdentifier, referrerCode, type = 'investor') {
   if (!memberIdentifier || !referrerCode) {
     return { success: false, message: 'Both member identifier and referral code are required.' };
   }
@@ -811,8 +911,10 @@ export function bindReferralCode(memberIdentifier, referrerCode) {
     return { success: false, message: 'Member account not found.' };
   }
 
-  if (targetMember.referredBy) {
-    return { success: false, message: `Account is already linked to sponsor (${targetMember.referredBy}). A referral code can only be submitted once.` };
+  const refKey = type === 'buyer' ? 'buyerReferredBy' : 'referredBy';
+
+  if (targetMember[refKey]) {
+    return { success: false, message: `Account is already linked to a ${type === 'buyer' ? 'buyer' : 'investor'} sponsor (${targetMember[refKey]}). This code can only be submitted once.` };
   }
 
   // Find referrer member
@@ -838,31 +940,32 @@ export function bindReferralCode(memberIdentifier, referrerCode) {
     return { success: false, message: 'You cannot use your own referral code as a sponsor.' };
   }
 
-  targetMember.referredBy = referrerMember.memberId;
+  targetMember[refKey] = referrerMember.memberId;
 
   // Process referral commissions post-registration
   let hasAwarded = false;
-  // If target user is an investor
-  if (targetMember.capitalInvested > 0) {
-    const bonus = targetMember.capitalInvested * 0.06;
-    if (bonus > 0) {
-      updateWalletBalance(referrerMember.memberId, bonus, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for linking Investor (${targetMember.name})`);
-      hasAwarded = true;
-    }
-  }
-  // If target user is a product buyer (has orders or joins via buyer application)
-  const ordersList = dataStore.orders ? dataStore.orders.filter(o => o.username === targetMember.phone || o.username === targetMember.memberId) : [];
-  if (ordersList.length > 0 || targetMember.termMonths === 0) {
+  
+  if (type === 'buyer') {
+    // If buyer, flat 500 BDT bonus
     updateWalletBalance(referrerMember.memberId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for linking Buyer (${targetMember.name})`);
     hasAwarded = true;
+  } else {
+    // If investor, flat 6% commission of capital
+    if (targetMember.capitalInvested > 0) {
+      const bonus = targetMember.capitalInvested * 0.06;
+      if (bonus > 0) {
+        updateWalletBalance(referrerMember.memberId, bonus, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for linking Investor (${targetMember.name})`);
+        hasAwarded = true;
+      }
+    }
   }
 
   saveDataStoreToFile(dataStore);
 
   return { 
     success: true, 
-    message: `Successfully linked to sponsor ${referrerMember.name} (${referrerMember.memberId})!${hasAwarded ? ' Referral commission credited.' : ''}`,
-    referredBy: referrerMember.memberId
+    message: `Successfully linked to ${type === 'buyer' ? 'buyer' : 'investor'} sponsor ${referrerMember.name} (${referrerMember.memberId})!${hasAwarded ? ' Referral commission credited.' : ''}`,
+    [refKey]: referrerMember.memberId
   };
 }
 

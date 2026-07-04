@@ -114,6 +114,7 @@ export default function AdminLayout({ children }) {
     { label: 'Buyer Applications', href: '/admin/buyer-applications', icon: 'fa-file-signature', badge: pendingBuyerBadge },
     { label: 'Active Members', href: '/admin/members', icon: 'fa-users' },
     { label: 'Investor Referral Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
+    { label: 'Referral Commissions', href: '/admin/referrals/commissions', icon: 'fa-gift' },
     { label: 'Products Selling Tree', href: '/admin/products-tree', icon: 'fa-diagram-project' },
     { label: 'Monthly Payouts', href: '/admin/payouts', icon: 'fa-hand-holding-dollar' },
     { label: 'Withdrawals', href: '/admin/withdrawals', icon: 'fa-money-bill-transfer', badge: pendingWithdrawalsBadge },
@@ -179,7 +180,9 @@ export default function AdminLayout({ children }) {
               <i className="fa-solid fa-bars"></i>
             </button>
             <div className="header-title">
-              <h1>PLAN-10 Control Center</h1>
+              <Link href="/admin" className="header-title-link">
+                <h1>PLAN-10 Control Center</h1>
+              </Link>
             </div>
           </div>
           <div className="header-user-wrapper" ref={userMenuRef} style={{ position: 'relative' }}>

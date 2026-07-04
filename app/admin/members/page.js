@@ -6,6 +6,7 @@ export default function AdminMembersPage() {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [filter, setFilter] = useState('ALL'); // 'ALL', 'INVESTOR', 'BUYER', 'BOTH'
 
   useEffect(() => {
     loadMembers();
@@ -45,11 +46,44 @@ export default function AdminMembersPage() {
 
   const formatBDT = (amt) => '৳' + Math.round(Number(amt)).toLocaleString('en-IN');
 
+  const filteredMembers = members.filter((m) => {
+    if (filter === 'ALL') return true;
+    return m.category === filter;
+  });
+
   return (
     <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h2>Active Member & Investor Directory</h2>
-        <p style={{ color: '#64748b' }}>Verified investors with active halal capital return accounts.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '15px' }}>
+        <div>
+          <h2>Active Member & Investor Directory</h2>
+          <p style={{ color: '#64748b', margin: '4px 0 0 0' }}>Verified members with active halal capital return accounts or buyer statuses.</p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {[
+            { key: 'ALL', label: 'All Members' },
+            { key: 'INVESTOR', label: 'Investors Only' },
+            { key: 'BUYER', label: 'Buyers Only' },
+            { key: 'BOTH', label: 'Investor & Buyer' }
+          ].map((item) => (
+            <button
+              key={item.key}
+              className={`btn-action ${filter === item.key ? 'btn-view' : ''}`}
+              style={{
+                background: filter === item.key ? '#2563eb' : '#1e293b',
+                color: filter === item.key ? '#fff' : '#94a3b8',
+                border: '1px solid #334155',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 600,
+                fontSize: '0.85rem'
+              }}
+              onClick={() => setFilter(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {message && (
@@ -61,6 +95,8 @@ export default function AdminMembersPage() {
       <div className="card-table-container">
         {loading ? (
           <p style={{ padding: '24px' }}>Loading active members...</p>
+        ) : filteredMembers.length === 0 ? (
+          <p style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No members found matching the selected category.</p>
         ) : (
           <table className="admin-table">
             <thead>
@@ -77,11 +113,43 @@ export default function AdminMembersPage() {
               </tr>
             </thead>
             <tbody>
-              {members.map((m) => (
+              {filteredMembers.map((m) => (
                 <tr key={m.memberId}>
                   <td><strong style={{ color: '#2563eb' }}>{m.memberId}</strong></td>
                   <td>
-                    <div><strong>{m.name}</strong></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <strong>{m.name}</strong>
+                      <span
+                        style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.3px',
+                          backgroundColor:
+                            m.category === 'INVESTOR'
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : m.category === 'BUYER'
+                              ? 'rgba(59, 130, 246, 0.15)'
+                              : 'rgba(139, 92, 246, 0.15)',
+                          color:
+                            m.category === 'INVESTOR'
+                              ? '#34d399'
+                              : m.category === 'BUYER'
+                              ? '#60a5fa'
+                              : '#a78bfa',
+                          border:
+                            m.category === 'INVESTOR'
+                              ? '1px solid rgba(16, 185, 129, 0.3)'
+                              : m.category === 'BUYER'
+                              ? '1px solid rgba(59, 130, 246, 0.3)'
+                              : '1px solid rgba(139, 92, 246, 0.3)'
+                        }}
+                      >
+                        {m.category === 'BOTH' ? 'Both' : m.category.toLowerCase()}
+                      </span>
+                    </div>
                     <small style={{ color: '#64748b' }}>{m.phone}</small>
                   </td>
                   <td><strong>{formatBDT(m.capitalInvested)}</strong></td>
