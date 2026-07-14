@@ -256,6 +256,14 @@ img {
     font-weight: 800;
     font-size: 1.2rem;
     gap: 2px;
+    overflow: hidden;
+}
+
+.logo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .logo-text {

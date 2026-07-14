@@ -5,6 +5,11 @@ export const metadata = {
   title: 'PLAN-10 BD (PVT). LTD | Smart Business & Investment Group',
   description: 'Official Portal of PLAN-10 BD (PVT). LTD. Leading multi-sector business network in Bangladesh specializing in Fisheries, Agriculture, Land Development, FMCG Consumer Goods, and Halal 33-Month Investment Plans.',
   keywords: 'Plan-10 BD, Smart Investment Bangladesh, Fisheries, Agriculture, Land Development, FMCG Products, Halal Investment, Cashback Plan, Gazipur Business',
+  icons: {
+    icon: '/assets/plan10logo.jpeg',
+    shortcut: '/assets/plan10logo.jpeg',
+    apple: '/assets/plan10logo.jpeg',
+  },
 };
 
 export default function RootLayout({ children }) {

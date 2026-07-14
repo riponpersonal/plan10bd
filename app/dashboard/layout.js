@@ -82,7 +82,9 @@ export default function DashboardLayout({ children }) {
                 {showNavDropdown && (
                   <div className="nav-popover-menu">
                     <div className="nav-popover-header">
-                      <div className="user-logo-icon small">P10</div>
+                      <div className="user-logo-icon small">
+                        <img src="/assets/plan10logo.jpeg" alt="P10" className="logo-img" />
+                      </div>
                       <span>My Profile</span>
                     </div>
 

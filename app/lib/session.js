@@ -1,26 +1,38 @@
 // PLAN-10 BD — Session Management (httpOnly Cookie-based)
 // Uses HMAC-SHA256 to sign session tokens. Zero external dependencies.
-// The secret key should be set via PLAN10_SECRET_KEY environment variable in production.
+// The secret key MUST be set via PLAN10_SECRET_KEY environment variable in production.
 
 import crypto from 'crypto';
 
-// ⚠️ Set PLAN10_SECRET_KEY as an environment variable in production!
-const SECRET_KEY = process.env.PLAN10_SECRET_KEY || 'plan10-bd-default-secret-change-in-production-2026';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const SECRET_KEY = process.env.PLAN10_SECRET_KEY || 'plan10-bd-default-secret-dev-only-2026';
 const COOKIE_NAME = 'plan10_session';
 const SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours in seconds
+
+function ensureSecretKey() {
+  if (IS_PRODUCTION && !process.env.PLAN10_SECRET_KEY) {
+    throw new Error(
+      '⛔ FATAL: PLAN10_SECRET_KEY environment variable is not set. ' +
+      'Refusing to run in production without a strong secret key. ' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
+    );
+  }
+}
 
 /**
  * Create a signed session token for a user.
  * Format: "base64(payload).signature"
- * @param {{ id: string, username: string, name: string, role: string }} user
+ * @param {{ id: string, username: string, name: string, role: string, phone?: string }} user
  * @returns {string} signed token
  */
 export function createSessionToken(user) {
+  ensureSecretKey();
   const payload = {
     id: user.id || user.username,
     username: user.username,
     name: user.name,
     role: user.role,
+    phone: user.phone || null,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE
   };
@@ -40,6 +52,7 @@ export function createSessionToken(user) {
  * @returns {{ valid: boolean, payload: object|null, expired: boolean }}
  */
 export function verifySessionToken(token) {
+  ensureSecretKey();
   if (!token || typeof token !== 'string') {
     return { valid: false, payload: null, expired: false };
   }
@@ -99,11 +112,54 @@ export function getSessionCookieName() {
 export function getSessionCookieOptions(clear = false) {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: IS_PRODUCTION,
     sameSite: 'strict',
     path: '/',
     maxAge: clear ? 0 : SESSION_MAX_AGE,
   };
 }
 
+// ─── Reusable Auth Helpers for API Routes ───
+
+/**
+ * Extract and verify the session payload from a request's cookies.
+ * @param {Request} request
+ * @returns {object|null} session payload or null if invalid/missing
+ */
+export function getSessionFromRequest(request) {
+  const cookieHeader = request.headers.get('cookie') || '';
+  const cookies = Object.fromEntries(
+    cookieHeader.split(';').map((c) => {
+      const [k, ...v] = c.trim().split('=');
+      return [k.trim(), v.join('=')];
+    })
+  );
+  const token = cookies[COOKIE_NAME];
+  if (!token) return null;
+  const { valid, payload } = verifySessionToken(token);
+  return valid ? payload : null;
+}
+
+/**
+ * Check if the request has a valid ADMIN session.
+ * ⛔ Does NOT fall back to x-admin-role header — that was a security hole.
+ * @param {Request} request
+ * @returns {boolean}
+ */
+export function requireAdmin(request) {
+  const session = getSessionFromRequest(request);
+  return !!(session && session.role === 'ADMIN');
+}
+
+/**
+ * Check if the request has any valid authenticated session.
+ * @param {Request} request
+ * @returns {boolean}
+ */
+export function requireAuth(request) {
+  const session = getSessionFromRequest(request);
+  return !!session;
+}
+
 export { COOKIE_NAME, SESSION_MAX_AGE };
+

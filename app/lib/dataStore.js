@@ -117,7 +117,7 @@ export function findUserByCredentials(username, password) {
     const pClean = phoneStr.trim().toLowerCase();
     if (pClean === inputClean) return true;
     const pDigits = phoneStr.replace(/\D/g, '');
-    if (inputDigits.length >= 6 && pDigits.length >= 6) {
+    if (inputDigits.length >= 10 && pDigits.length >= 10) {
       if (pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits)) {
         return true;
       }
@@ -204,7 +204,7 @@ export function getUserDashboardData(identifier) {
     const pClean = phoneStr.trim().toLowerCase();
     if (pClean === cleanId) return true;
     const pDigits = phoneStr.replace(/\D/g, '');
-    if (inputDigits.length >= 6 && pDigits.length >= 6) {
+    if (inputDigits.length >= 10 && pDigits.length >= 10) {
       return pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits);
     }
     return false;
@@ -460,7 +460,7 @@ export function isPhoneRegistered(phoneStr) {
     const pClean = p.trim().toLowerCase();
     if (pClean === inputClean) return true;
     const pDigits = p.replace(/\D/g, '');
-    if (inputDigits.length >= 6 && pDigits.length >= 6) {
+    if (inputDigits.length >= 10 && pDigits.length >= 10) {
       return pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits);
     }
     return false;
@@ -794,7 +794,7 @@ export function updateUserAdminRole(username, newRole) {
         id: `usr_${memberObj.memberId}`,
         username: memberObj.memberId,
         phone: memberObj.phone,
-        password: 'user123',
+        password: hashPassword('user123'),
         name: memberObj.name,
         email: `${memberObj.name.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
         role: newRole,
@@ -823,7 +823,7 @@ export function updateMemberProfile(identifier, updateData) {
     const pClean = phoneStr.trim().toLowerCase();
     if (pClean === cleanId) return true;
     const pDigits = phoneStr.replace(/\D/g, '');
-    if (inputDigits.length >= 6 && pDigits.length >= 6) {
+    if (inputDigits.length >= 10 && pDigits.length >= 10) {
       return pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits);
     }
     return false;
@@ -896,7 +896,7 @@ export function bindReferralCode(memberIdentifier, referrerCode, type = 'investo
     const pClean = phoneStr.trim().toLowerCase();
     if (pClean === targetClean) return true;
     const pDigits = phoneStr.replace(/\D/g, '');
-    if (targetDigits.length >= 6 && pDigits.length >= 6) {
+    if (targetDigits.length >= 10 && pDigits.length >= 10) {
       return pDigits === targetDigits || pDigits.endsWith(targetDigits) || targetDigits.endsWith(pDigits);
     }
     return false;

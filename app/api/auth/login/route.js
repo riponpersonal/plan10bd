@@ -118,7 +118,11 @@ export async function POST(request) {
       );
     }
 
-    return NextResponse.json({
+    // ✅ SECURITY FIX: Issue httpOnly session cookie for regular users too (not just admin)
+    const sessionToken = createSessionToken(user);
+    const cookieOpts = getSessionCookieOptions();
+
+    const response = NextResponse.json({
       success: true,
       role: 'USER',
       username: user.username,
@@ -126,6 +130,16 @@ export async function POST(request) {
       redirectUrl: '/dashboard',
       message: `Welcome back, ${user.name}! Opening your User Dashboard...`
     });
+
+    response.cookies.set(COOKIE_NAME, sessionToken, {
+      httpOnly: cookieOpts.httpOnly,
+      secure: cookieOpts.secure,
+      sameSite: cookieOpts.sameSite,
+      path: cookieOpts.path,
+      maxAge: cookieOpts.maxAge,
+    });
+
+    return response;
   } catch (error) {
     return NextResponse.json(
       { success: false, message: 'Server authentication error.' },

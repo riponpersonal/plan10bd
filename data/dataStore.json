@@ -623,6 +623,13 @@
   ],
   "logs": [
     {
+      "id": "log_1783505009452_delde",
+      "timestamp": "2026-07-08 04:03 PM",
+      "action": "Database JSON Exported",
+      "ipAddress": "::ffff:192.168.56.1",
+      "status": "Success"
+    },
+    {
       "id": "log_1783125684458_e5osr",
       "timestamp": "2026-07-04 06:41 AM",
       "action": "Factory Reset Executed",
@@ -638,6 +645,24 @@
     }
   ],
   "orders": [
+    {
+      "id": "ORD_1783504754456_alhdy",
+      "username": "Plan10-101",
+      "productId": 1,
+      "productName": "Shirt and Pant combo pack",
+      "price": 2500,
+      "status": "DELIVERED",
+      "orderedAt": "2026-07-08T09:59:14.456Z"
+    },
+    {
+      "id": "ORD_1783504229378_tt4di",
+      "username": "admin",
+      "productId": 1,
+      "productName": "Shirt and Pant combo pack",
+      "price": 2500,
+      "status": "DELIVERED",
+      "orderedAt": "2026-07-08T09:50:29.378Z"
+    },
     {
       "id": "ORD_1783180226991_ejikc",
       "username": "Plan10-101",
@@ -679,6 +704,54 @@
     }
   ],
   "notifications": [
+    {
+      "id": "NTF_1783504860539_6dsgc",
+      "username": "Plan10-101",
+      "message": "Success! Your order ORD_1783504754456_alhdy for \"Shirt and Pant combo pack\" has been delivered.",
+      "type": "ORDER",
+      "timestamp": "2026-07-08T10:01:00.539Z",
+      "isRead": false
+    },
+    {
+      "id": "NTF_1783504795289_anl18",
+      "username": "Plan10-101",
+      "message": "Great news! Your order ORD_1783504754456_alhdy for \"Shirt and Pant combo pack\" is now in processing.",
+      "type": "ORDER",
+      "timestamp": "2026-07-08T09:59:55.289Z",
+      "isRead": false
+    },
+    {
+      "id": "NTF_1783504779794_8zj1n",
+      "username": "admin",
+      "message": "Success! Your order ORD_1783504229378_tt4di for \"Shirt and Pant combo pack\" has been delivered.",
+      "type": "ORDER",
+      "timestamp": "2026-07-08T09:59:39.794Z",
+      "isRead": false
+    },
+    {
+      "id": "NTF_1783504754457_r825n",
+      "username": "Plan10-101",
+      "message": "Your order ORD_1783504754456_alhdy for \"Shirt and Pant combo pack\" (৳2,500 BDT) has been placed successfully and is pending admin review.",
+      "type": "ORDER",
+      "timestamp": "2026-07-08T09:59:14.457Z",
+      "isRead": false
+    },
+    {
+      "id": "NTF_1783504672841_rs8up",
+      "username": "admin",
+      "message": "Great news! Your order ORD_1783504229378_tt4di for \"Shirt and Pant combo pack\" is now in processing.",
+      "type": "ORDER",
+      "timestamp": "2026-07-08T09:57:52.841Z",
+      "isRead": false
+    },
+    {
+      "id": "NTF_1783504229378_ioutk",
+      "username": "admin",
+      "message": "Your order ORD_1783504229378_tt4di for \"Shirt and Pant combo pack\" (৳2,500 BDT) has been placed successfully and is pending admin review.",
+      "type": "ORDER",
+      "timestamp": "2026-07-08T09:50:29.378Z",
+      "isRead": false
+    },
     {
       "id": "NTF_1783180313513_0d6nc",
       "username": "Plan10-101",

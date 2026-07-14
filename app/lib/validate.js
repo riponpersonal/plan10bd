@@ -70,8 +70,8 @@ export function validateApplication(body) {
     errors.push('NID number is too long.');
   }
 
-  if (!body.password || body.password.trim().length < 4) {
-    errors.push('Password must be at least 4 characters.');
+  if (!body.password || body.password.trim().length < 8) {
+    errors.push('Password must be at least 8 characters.');
   }
 
   // Investment-specific validation

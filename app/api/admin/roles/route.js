@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getAllUsersWithRoles, updateUserAdminRole } from '@/app/lib/dataStore';
+import { requireAdmin } from '@/app/lib/session';
+import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
 
-export async function GET() {
+export async function GET(request) {
   try {
+    // ✅ SECURITY FIX: Require admin session (was completely unprotected before)
+    if (!requireAdmin(request)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
+    }
     const users = getAllUsersWithRoles();
     return NextResponse.json({ success: true, users });
   } catch (error) {
@@ -12,6 +18,12 @@ export async function GET() {
 
 export async function POST(request) {
   try {
+    // ✅ SECURITY FIX: Require CSRF + admin session (was completely unprotected before)
+    if (!validateOrigin(request)) return csrfDenied();
+    if (!requireAdmin(request)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { username, role } = body;
 

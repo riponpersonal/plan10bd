@@ -57,9 +57,7 @@ export default function AdminLayout({ children }) {
     };
   }, []);
 
-  useEffect(() => {
-    fetchPendingCount();
-  }, [pathname]);
+
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -134,7 +132,9 @@ export default function AdminLayout({ children }) {
       {/* Sidebar */}
       <aside className={`admin-sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-logo">P10</div>
+          <div className="sidebar-logo">
+            <img src="/assets/plan10logo.jpeg" alt="P10" className="logo-img" />
+          </div>
           <div className="sidebar-brand">
             <h2>PLAN-10 BD</h2>
             <span>Corporate Admin Panel</span>

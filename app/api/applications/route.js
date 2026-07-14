@@ -2,33 +2,13 @@ import { NextResponse } from 'next/server';
 import { getDataStore, addApplication, updateApplicationStatus, deleteApplication } from '@/app/lib/dataStore';
 import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
 import { validateApplication, sanitizeObject } from '@/app/lib/validate';
-import { verifySessionToken, getSessionCookieName } from '@/app/lib/session';
+import { requireAdmin } from '@/app/lib/session';
 
-const COOKIE_NAME = getSessionCookieName();
-
-function getSessionFromRequest(request) {
-  const cookieHeader = request.headers.get('cookie') || '';
-  const cookies = Object.fromEntries(
-    cookieHeader.split(';').map((c) => {
-      const [k, ...v] = c.trim().split('=');
-      return [k.trim(), v.join('=')];
-    })
-  );
-  const token = cookies[COOKIE_NAME];
-  if (!token) return null;
-  const { valid, payload } = verifySessionToken(token);
-  return valid ? payload : null;
-}
-
-function checkAdminRole(request) {
-  const session = getSessionFromRequest(request);
-  if (session && session.role === 'ADMIN') return true;
-  // Fallback: legacy header
-  const role = request.headers.get('x-admin-role');
-  return role === 'ADMIN';
-}
-
-export async function GET() {
+// ✅ SECURITY FIX: GET now requires admin auth (was publicly accessible before, leaking NID/phone data)
+export async function GET(request) {
+  if (!requireAdmin(request)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
+  }
   const store = getDataStore();
   return NextResponse.json({ success: true, applications: store.applications });
 }
@@ -61,7 +41,8 @@ export async function POST(request) {
 export async function PATCH(request) {
   try {
     if (!validateOrigin(request)) return csrfDenied();
-    if (!checkAdminRole(request)) {
+    // ✅ SECURITY FIX: Removed x-admin-role header fallback
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Only admin can update applications.' }, { status: 403 });
     }
 
@@ -90,7 +71,7 @@ export async function PATCH(request) {
 export async function DELETE(request) {
   try {
     if (!validateOrigin(request)) return csrfDenied();
-    if (!checkAdminRole(request)) {
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Only admin can delete data.' }, { status: 403 });
     }
     const { searchParams } = new URL(request.url);

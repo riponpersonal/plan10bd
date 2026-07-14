@@ -295,8 +295,7 @@ export default function Home() {
         <div className="container nav-container">
           <a href="#" className="brand-logo">
             <div className="logo-icon">
-              <i className="fa-solid fa-chart-line"></i>
-              <span>P10</span>
+              <img src="/assets/plan10logo.jpeg" alt="P10" className="logo-img" />
             </div>
             <div className="logo-text">
               <span className="brand-name">PLAN-10 BD <small>(PVT). LTD</small></span>
@@ -797,8 +796,7 @@ export default function Home() {
         <div className="container footer-container">
           <div className="footer-col brand-col">
             <div className="logo-icon mb-2">
-              <i className="fa-solid fa-chart-line"></i>
-              <span>P10</span>
+              <img src="/assets/plan10logo.jpeg" alt="P10" className="logo-img" />
             </div>
             <h3>PLAN-10 BD (PVT). LTD</h3>
             <p>Smart Business and Investment Group in Bangladesh. Halal investment, sustainable agro projects, real estate, and consumer products.</p>

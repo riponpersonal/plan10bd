@@ -1,9 +1,24 @@
 import { NextResponse } from 'next/server';
 import { updateMemberProfile } from '@/app/lib/dataStore';
+import { getSessionFromRequest } from '@/app/lib/session';
+import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
+import { sanitizeObject } from '@/app/lib/validate';
 
 export async function POST(request) {
   try {
-    const body = await request.json();
+    // ✅ SECURITY FIX: Require CSRF + authenticated session
+    if (!validateOrigin(request)) return csrfDenied();
+
+    const session = getSessionFromRequest(request);
+    if (!session) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized: Please log in.' },
+        { status: 401 }
+      );
+    }
+
+    const rawBody = await request.json();
+    const body = sanitizeObject(rawBody);
     const { identifier, name, phone, nid, fatherName, address, nomineeName, relation } = body;
 
     if (!identifier) {
@@ -11,6 +26,22 @@ export async function POST(request) {
         { success: false, message: 'User identifier is required.' },
         { status: 400 }
       );
+    }
+
+    // ✅ SECURITY: Users can only edit their own profile (admins can edit any)
+    if (session.role !== 'ADMIN') {
+      const reqClean = identifier.trim().toLowerCase();
+      const isOwn = (
+        reqClean === (session.username || '').toLowerCase() ||
+        reqClean === (session.phone || '').toLowerCase() ||
+        reqClean === (session.id || '').toLowerCase()
+      );
+      if (!isOwn) {
+        return NextResponse.json(
+          { success: false, message: 'Forbidden: You can only edit your own profile.' },
+          { status: 403 }
+        );
+      }
     }
 
     const updated = updateMemberProfile(identifier, {

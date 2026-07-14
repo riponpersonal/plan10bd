@@ -8,13 +8,17 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:3000',
   'http://192.168.56.1:3000',
   'http://192.168.56.1',
-  // Add your production domain here when deploying, e.g.:
-  // 'https://plan10bd.com',
 ];
+
+// ✅ Add production domain from environment variable
+if (process.env.PLAN10_PRODUCTION_ORIGIN) {
+  ALLOWED_ORIGINS.push(process.env.PLAN10_PRODUCTION_ORIGIN);
+}
 
 /**
  * Validate the Origin or Referer header of a mutating request.
  * Returns true if the request appears to be same-origin.
+ * ⛔ SECURITY FIX: Returns false when neither header is present (prevents CSRF bypass).
  * @param {Request} request
  * @returns {boolean}
  */
@@ -32,10 +36,9 @@ export function validateOrigin(request) {
     return ALLOWED_ORIGINS.some((allowed) => referer.startsWith(allowed));
   }
 
-  // If neither header is present (e.g., same-origin requests from some clients),
-  // allow it — this is a defense-in-depth measure, not a hard block.
-  // Server-side session validation is the primary auth gate.
-  return true;
+  // ⛔ SECURITY FIX: If neither header is present, DENY the request.
+  // Previously this returned true, allowing CSRF bypass by stripping headers.
+  return false;
 }
 
 /**
@@ -52,3 +55,4 @@ export function csrfDenied(message = 'Forbidden: Cross-origin request rejected.'
     }
   );
 }
+

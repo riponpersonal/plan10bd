@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getProducts, addProduct, updateProduct, deleteProduct } from '@/app/lib/dataStore';
-
-function checkAdminRole(request) {
-  const role = request.headers.get('x-admin-role');
-  return role === 'ADMIN';
-}
+import { requireAdmin } from '@/app/lib/session';
+import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
+import { validateProduct, sanitizeObject } from '@/app/lib/validate';
 
 export async function GET() {
   try {
@@ -17,13 +15,19 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    if (!checkAdminRole(request)) {
+    // ✅ SECURITY FIX: Use session-based auth instead of spoofable x-admin-role header
+    if (!validateOrigin(request)) return csrfDenied();
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Only admins can manage products.' }, { status: 403 });
     }
-    const body = await request.json();
-    if (!body.name) {
-      return NextResponse.json({ success: false, message: 'Product name is required.' }, { status: 400 });
+    const rawBody = await request.json();
+    const body = sanitizeObject(rawBody);
+
+    const validation = validateProduct(body);
+    if (!validation.valid) {
+      return NextResponse.json({ success: false, message: validation.errors.join(' ') }, { status: 400 });
     }
+
     const newProduct = addProduct(body);
     return NextResponse.json({ success: true, product: newProduct });
   } catch (err) {
@@ -33,7 +37,8 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    if (!checkAdminRole(request)) {
+    if (!validateOrigin(request)) return csrfDenied();
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Only admins can manage products.' }, { status: 403 });
     }
     const { searchParams } = new URL(request.url);
@@ -41,7 +46,8 @@ export async function PUT(request) {
     if (!id) {
       return NextResponse.json({ success: false, message: 'Product ID is required.' }, { status: 400 });
     }
-    const body = await request.json();
+    const rawBody = await request.json();
+    const body = sanitizeObject(rawBody);
     const updated = updateProduct(id, body);
     if (!updated) {
       return NextResponse.json({ success: false, message: 'Product not found.' }, { status: 404 });
@@ -54,7 +60,8 @@ export async function PUT(request) {
 
 export async function DELETE(request) {
   try {
-    if (!checkAdminRole(request)) {
+    if (!validateOrigin(request)) return csrfDenied();
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Only admins can manage products.' }, { status: 403 });
     }
     const { searchParams } = new URL(request.url);
