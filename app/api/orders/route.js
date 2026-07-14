@@ -1,25 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getOrders, addOrder, updateOrderStatus, getDataStore } from '@/app/lib/dataStore';
 import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
-import { verifySessionToken, getSessionCookieName } from '@/app/lib/session';
-
-const COOKIE_NAME = getSessionCookieName();
-
-function checkAdminRole(request) {
-  const cookieHeader = request.headers.get('cookie') || '';
-  const cookies = Object.fromEntries(
-    cookieHeader.split(';').map((c) => {
-      const [k, ...v] = c.trim().split('=');
-      return [k.trim(), v.join('=')];
-    })
-  );
-  const token = cookies[COOKIE_NAME];
-  if (token) {
-    const { valid, payload } = verifySessionToken(token);
-    if (valid && payload?.role === 'ADMIN') return true;
-  }
-  return request.headers.get('x-admin-role') === 'ADMIN';
-}
+import { requireAdmin, getSessionFromRequest } from '@/app/lib/session';
 
 export async function GET(request) {
   try {
@@ -27,13 +9,13 @@ export async function GET(request) {
     const username = searchParams.get('username');
 
     if (username) {
-      const store = getDataStore();
+      const store = await getDataStore();
       const cleanUser = username.trim().toLowerCase();
       const userObj = store.users.find(u => u.username && u.username.toLowerCase() === cleanUser);
       const memberObj = store.members.find(m => m.memberId && m.memberId.toLowerCase() === cleanUser);
       const phone = userObj ? userObj.phone : (memberObj ? memberObj.phone : null);
 
-      const allOrders = getOrders();
+      const allOrders = await getOrders();
       const userOrders = allOrders.filter((o) => {
         const orderUser = o.username.toLowerCase();
         if (orderUser === cleanUser) return true;
@@ -44,14 +26,14 @@ export async function GET(request) {
     }
 
     // Otherwise, check admin permissions and return all orders
-    if (!checkAdminRole(request)) {
+    if (!requireAdmin(request)) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized: Access denied.' },
         { status: 403 }
       );
     }
 
-    const orders = getOrders();
+    const orders = await getOrders();
     return NextResponse.json({ success: true, orders });
   } catch (err) {
     return NextResponse.json(
@@ -84,7 +66,7 @@ export async function POST(request) {
       );
     }
 
-    const store = getDataStore();
+    const store = await getDataStore();
     const product = store.products.find((p) => p.id === numericProductId);
     if (!product) {
       return NextResponse.json(
@@ -93,7 +75,7 @@ export async function POST(request) {
       );
     }
 
-    const newOrder = addOrder({
+    const newOrder = await addOrder({
       username,
       productId,
       productName: product.name,
@@ -112,7 +94,8 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     if (!validateOrigin(request)) return csrfDenied();
-    if (!checkAdminRole(request)) {
+    // ✅ SECURITY FIX: Require admin session
+    if (!requireAdmin(request)) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized: Only admins can update order status.' },
         { status: 403 }
@@ -134,7 +117,7 @@ export async function PUT(request) {
       return NextResponse.json({ success: false, message: 'Invalid status value.' }, { status: 400 });
     }
 
-    const updatedOrder = updateOrderStatus(orderId, status);
+    const updatedOrder = await updateOrderStatus(orderId, status);
     if (!updatedOrder) {
       return NextResponse.json(
         { success: false, message: 'Order not found.' },

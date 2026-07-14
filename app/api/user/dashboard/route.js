@@ -39,7 +39,7 @@ export async function GET(request) {
       }
     }
 
-    const dashboardData = getUserDashboardData(identifier);
+    const dashboardData = await getUserDashboardData(identifier);
 
     if (!dashboardData) {
       return NextResponse.json(

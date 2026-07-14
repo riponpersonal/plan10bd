@@ -1,38 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getWithdrawals, updateWithdrawalStatus } from '@/app/lib/dataStore';
 import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
-import { verifySessionToken, getSessionCookieName } from '@/app/lib/session';
+import { requireAdmin } from '@/app/lib/session';
 import { sanitizeObject } from '@/app/lib/validate';
-
-const COOKIE_NAME = getSessionCookieName();
-
-function getSessionFromRequest(request) {
-  const cookieHeader = request.headers.get('cookie') || '';
-  const cookies = Object.fromEntries(
-    cookieHeader.split(';').map((c) => {
-      const [k, ...v] = c.trim().split('=');
-      return [k.trim(), v.join('=')];
-    })
-  );
-  const token = cookies[COOKIE_NAME];
-  if (!token) return null;
-  const { valid, payload } = verifySessionToken(token);
-  return valid ? payload : null;
-}
-
-function checkAdminRole(request) {
-  const session = getSessionFromRequest(request);
-  if (session && session.role === 'ADMIN') return true;
-  const role = request.headers.get('x-admin-role');
-  return role === 'ADMIN';
-}
 
 export async function GET(request) {
   try {
-    if (!checkAdminRole(request)) {
+    // ✅ SECURITY FIX: Require admin session
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
     }
-    const list = getWithdrawals();
+    const list = await getWithdrawals();
     return NextResponse.json({ success: true, withdrawals: list });
   } catch (err) {
     return NextResponse.json({ success: false, message: 'Internal server error.' }, { status: 500 });
@@ -42,7 +20,8 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     if (!validateOrigin(request)) return csrfDenied();
-    if (!checkAdminRole(request)) {
+    // ✅ SECURITY FIX: Require admin session
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
     }
 
@@ -59,7 +38,7 @@ export async function POST(request) {
     }
 
     const status = action === 'approve' ? 'APPROVED' : 'REJECTED';
-    const result = updateWithdrawalStatus(requestId, status);
+    const result = await updateWithdrawalStatus(requestId, status);
     if (!result.success) {
       return NextResponse.json({ success: false, message: result.message }, { status: 400 });
     }

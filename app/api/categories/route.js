@@ -1,14 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getCategories, addCategory } from '@/app/lib/dataStore';
-
-function checkAdminRole(request) {
-  const role = request.headers.get('x-admin-role');
-  return role === 'ADMIN';
-}
+import { requireAdmin } from '@/app/lib/session';
 
 export async function GET() {
   try {
-    const categories = getCategories();
+    const categories = await getCategories();
     return NextResponse.json({ success: true, categories });
   } catch (err) {
     return NextResponse.json({ success: false, message: 'Failed to fetch categories.' }, { status: 500 });
@@ -17,7 +13,8 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    if (!checkAdminRole(request)) {
+    // ✅ SECURITY FIX: Require admin session
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Only admins can manage categories.' }, { status: 403 });
     }
     const body = await request.json();
@@ -25,7 +22,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Category name is required.' }, { status: 400 });
     }
     
-    const result = addCategory(body.name);
+    const result = await addCategory(body.name);
     if (!result.success) {
       return NextResponse.json({ success: false, message: result.message }, { status: 400 });
     }

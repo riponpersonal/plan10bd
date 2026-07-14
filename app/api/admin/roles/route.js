@@ -9,7 +9,7 @@ export async function GET(request) {
     if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
     }
-    const users = getAllUsersWithRoles();
+    const users = await getAllUsersWithRoles();
     return NextResponse.json({ success: true, users });
   } catch (error) {
     return NextResponse.json({ success: false, message: 'Failed to fetch users' }, { status: 500 });
@@ -31,7 +31,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Username and role are required' }, { status: 400 });
     }
 
-    const success = updateUserAdminRole(username, role);
+    const success = await updateUserAdminRole(username, role);
     if (!success) {
       return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
     }

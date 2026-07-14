@@ -1,236 +1,255 @@
-// PLAN-10 BD Centralized Data Store & File Persistence Interface
-// Handles state persistence for Users, SPL Applications, Members, Payouts, Products, and Inquiries.
-import fs from 'fs';
-import path from 'path';
+// PLAN-10 BD Centralized Data Store & Prisma SQL Database Interface
+// Refactored to use SQL database instead of flat-file JSON datastore.
+import { PrismaClient } from '@prisma/client';
 import { hashPassword, verifyPassword, needsRehash } from './crypto.js';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'dataStore.json');
+// Prevent multiple instances of Prisma Client in development hot reloading
+let prisma;
+if (process.env.NODE_ENV === 'production') {
+  prisma = new PrismaClient();
+} else {
+  if (!global.prisma) {
+    global.prisma = new PrismaClient();
+  }
+  prisma = global.prisma;
+}
 
-const initialDataStore = {
-  users: [
-    {
-      id: 'usr_admin',
-      username: 'admin',
-      password: 'admin',
-      name: 'Corporate Executive Admin',
-      email: 'admin@plan10bd.com',
-      role: 'ADMIN',
-      createdAt: '2026-01-01T00:00:00Z'
-    }
-  ],
-  applications: [],
-  members: [],
-  payouts: [],
-  products: [],
-  inquiries: [],
-  categories: [],
-  logs: [],
-  orders: [],
-  wallets: [],
-  withdrawals: [],
-  notifications: []
-};
+export { prisma };
 
-function saveDataStoreToFile(data) {
+// Helper: Normalize date to ISO string safely
+function ensureISOString(dateVal) {
+  if (!dateVal) return new Date().toISOString();
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    // Atomic write: write to .tmp first, then rename — prevents partial-write corruption
-    const tmpFile = DATA_FILE + '.tmp';
-    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf8');
-    fs.renameSync(tmpFile, DATA_FILE);
-  } catch (err) {
-    console.error('Error saving dataStore to file:', err);
+    const d = new Date(dateVal);
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  } catch {
+    return new Date().toISOString();
   }
 }
 
-function loadDataStoreFromFile() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(DATA_FILE)) {
-      const fileData = fs.readFileSync(DATA_FILE, 'utf8');
-      const parsed = JSON.parse(fileData);
-      
-      // Migrate products to ecommerce schema if needed
-      if (parsed.products && Array.isArray(parsed.products)) {
-        parsed.products = parsed.products.map(p => ({
-          id: p.id,
-          name: p.name,
-          brand: p.brand || 'PLAN-10',
-          category: p.category || 'Consumer Goods',
-          price: p.price !== undefined ? p.price : (1500 + (p.id * 350)),
-          description: p.description || `${p.name} - Premium quality consumer product designed for maximum user satisfaction.`,
-          imageUrl: p.imageUrl || '',
-          imageUrls: p.imageUrls || (p.imageUrl ? [p.imageUrl] : []),
-          stockStatus: p.stockStatus || 'IN_STOCK'
-        }));
-      }
-      
-      // Migrate/Initialize categories if needed
-      if (!parsed.categories || !Array.isArray(parsed.categories)) {
-        parsed.categories = [];
-      }
-      // Migrate/Initialize orders if needed
-      if (!parsed.orders || !Array.isArray(parsed.orders)) {
-        parsed.orders = [];
-      }
-      // Initialize wallets, withdrawals, and notifications if needed
-      if (!parsed.wallets || !Array.isArray(parsed.wallets)) {
-        parsed.wallets = [];
-      }
-      if (!parsed.withdrawals || !Array.isArray(parsed.withdrawals)) {
-        parsed.withdrawals = [];
-      }
-      if (!parsed.notifications || !Array.isArray(parsed.notifications)) {
-        parsed.notifications = [];
-      }
-      return parsed;
-    }
-  } catch (err) {
-    console.error('Error loading dataStore from file:', err);
-  }
-  saveDataStoreToFile(initialDataStore);
-  return initialDataStore;
+// ─── Core DataStore Compatibility Layer ───
+
+/**
+ * Returns all records in a shape matching the old in-memory JSON dataStore.
+ * Used for exporting backup data or legacy handlers.
+ */
+export async function getDataStore() {
+  const [users, applications, members, payouts, products, inquiries, categories, logs, orders, wallets, withdrawals, notifications] = await Promise.all([
+    prisma.user.findMany(),
+    prisma.application.findMany({ orderBy: { submittedAt: 'desc' } }),
+    prisma.member.findMany(),
+    prisma.payout.findMany(),
+    prisma.product.findMany(),
+    prisma.inquiry.findMany({ orderBy: { date: 'desc' } }),
+    prisma.category.findMany(),
+    prisma.systemLog.findMany({ orderBy: { timestamp: 'desc' } }),
+    prisma.order.findMany(),
+    prisma.wallet.findMany({ include: { transactions: true } }),
+    prisma.withdrawal.findMany({ orderBy: { requestedAt: 'desc' } }),
+    prisma.notification.findMany({ orderBy: { timestamp: 'desc' } }),
+  ]);
+
+  return {
+    users,
+    applications,
+    members,
+    payouts,
+    products,
+    inquiries,
+    categories: categories.map(c => c.name),
+    logs,
+    orders,
+    wallets,
+    withdrawals,
+    notifications
+  };
 }
 
-if (!globalThis.plan10DataStore) {
-  globalThis.plan10DataStore = loadDataStoreFromFile();
-}
-const dataStore = globalThis.plan10DataStore;
+// ─── Phone and Identifier Helper Matches ───
 
-export function getDataStore() {
-  return dataStore;
-}
-
-export function findUserByCredentials(username, password) {
-  if (!username || !password) return null;
+async function findUserRecord(username) {
+  if (!username) return null;
   const inputClean = username.trim().toLowerCase();
   const inputDigits = username.replace(/\D/g, '');
-  const passClean = password.trim();
 
-  const matchPhone = (phoneStr) => {
-    if (!phoneStr) return false;
-    const pClean = phoneStr.trim().toLowerCase();
-    if (pClean === inputClean) return true;
-    const pDigits = phoneStr.replace(/\D/g, '');
-    if (inputDigits.length >= 10 && pDigits.length >= 10) {
-      if (pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits)) {
-        return true;
+  let user = await prisma.user.findFirst({
+    where: { username: { equals: inputClean } }
+  });
+  if (user) return user;
+
+  user = await prisma.user.findFirst({
+    where: { phone: { equals: username.trim() } }
+  });
+  if (user) return user;
+
+  if (inputDigits.length >= 10) {
+    const allUsers = await prisma.user.findMany({
+      where: { phone: { not: null } }
+    });
+    for (const u of allUsers) {
+      const pDigits = u.phone.replace(/\D/g, '');
+      if (pDigits.length >= 10 && (pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits))) {
+        return u;
       }
     }
-    return false;
-  };
+  }
+  return null;
+}
 
-  // 1. Search in users array
-  for (const u of dataStore.users) {
-    const isUserMatch = (u.username && u.username.toLowerCase() === inputClean) || matchPhone(u.phone);
-    if (isUserMatch && verifyPassword(passClean, u.password)) {
-      // Auto-migrate: if password is still plaintext, hash it now silently
-      if (needsRehash(u.password)) {
-        try {
-          u.password = hashPassword(passClean);
-          saveDataStoreToFile(dataStore);
-        } catch (e) {
-          console.error('Auto-migration hashing failed:', e);
-        }
+async function findMemberRecord(memberIdOrPhone) {
+  if (!memberIdOrPhone) return null;
+  const cleanId = memberIdOrPhone.trim().toLowerCase();
+  const inputDigits = memberIdOrPhone.replace(/\D/g, '');
+
+  let member = await prisma.member.findFirst({
+    where: { memberId: { equals: cleanId } }
+  });
+  if (member) return member;
+
+  member = await prisma.member.findFirst({
+    where: { phone: { equals: memberIdOrPhone.trim() } }
+  });
+  if (member) return member;
+
+  if (inputDigits.length >= 10) {
+    const allMembers = await prisma.member.findMany();
+    for (const m of allMembers) {
+      const pDigits = m.phone.replace(/\D/g, '');
+      if (pDigits.length >= 10 && (pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits))) {
+        return m;
       }
-      if (u.role !== 'ADMIN') {
-        const app = dataStore.applications.find(a => matchPhone(a.phone) || (u.phone && matchPhone(u.phone)));
-        if (app && app.status !== 'APPROVED') {
-          return {
-            ...u,
-            role: 'PENDING_USER',
-            appStatus: app.status,
-            appPurpose: app.purpose || 'Investment'
-          };
+    }
+  }
+  return null;
+}
+
+// ─── Exported Database Operations ───
+
+export async function findUserByCredentials(username, password) {
+  if (!username || !password) return null;
+  const passClean = password.trim();
+
+  // Search User Account
+  const user = await findUserRecord(username);
+  if (user && verifyPassword(passClean, user.password)) {
+    // Auto-migrate: hash if needed
+    if (needsRehash(user.password)) {
+      const hashed = hashPassword(passClean);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashed }
+      });
+      user.password = hashed;
+    }
+
+    if (user.role !== 'ADMIN') {
+      const app = await prisma.application.findFirst({
+        where: {
+          OR: [
+            { phone: user.phone || '' },
+            { phone: user.username }
+          ]
         }
+      });
+      if (app && app.status !== 'APPROVED') {
+        return {
+          ...user,
+          role: 'PENDING_USER',
+          appStatus: app.status,
+          appPurpose: app.purpose || 'Investment'
+        };
       }
-      return u;
+    }
+    return user;
+  }
+
+  // Search Application Account
+  const cleanId = username.trim().toLowerCase();
+  const inputDigits = username.replace(/\D/g, '');
+  let matchApp = await prisma.application.findFirst({
+    where: { phone: { equals: username.trim() } }
+  });
+
+  if (!matchApp && inputDigits.length >= 10) {
+    const allApps = await prisma.application.findMany();
+    for (const a of allApps) {
+      const pDigits = a.phone.replace(/\D/g, '');
+      if (pDigits.length >= 10 && (pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits))) {
+        matchApp = a;
+        break;
+      }
     }
   }
 
-  // 2. Search in applications array
-  for (const app of dataStore.applications) {
-    const isAppPhoneMatch = matchPhone(app.phone);
-    const isPassMatch = app.password && verifyPassword(passClean, app.password);
-    if (isAppPhoneMatch && isPassMatch) {
-      // Auto-migrate application password hash
-      if (needsRehash(app.password)) {
-        try {
-          app.password = hashPassword(passClean);
-          saveDataStoreToFile(dataStore);
-        } catch (e) {
-          console.error('Auto-migration hashing failed for app:', e);
-        }
-      }
-      return {
-        id: `usr_app_${app.id}`,
-        username: app.phone,
-        phone: app.phone,
-        name: app.applicantName,
-        role: app.status === 'APPROVED' ? 'USER' : 'PENDING_USER',
-        appStatus: app.status,
-        appPurpose: app.purpose || 'Investment'
-      };
+  if (matchApp && matchApp.password && verifyPassword(passClean, matchApp.password)) {
+    if (needsRehash(matchApp.password)) {
+      const hashed = hashPassword(passClean);
+      await prisma.application.update({
+        where: { id: matchApp.id },
+        data: { password: hashed }
+      });
+      matchApp.password = hashed;
     }
+    return {
+      id: `usr_app_${matchApp.id}`,
+      username: matchApp.phone,
+      phone: matchApp.phone,
+      name: matchApp.applicantName,
+      role: matchApp.status === 'APPROVED' ? 'USER' : 'PENDING_USER',
+      appStatus: matchApp.status,
+      appPurpose: matchApp.purpose || 'Investment'
+    };
   }
 
   return null;
 }
 
-/**
- * Find a user by their ID or username. Used by session verification.
- * @param {string} idOrUsername
- * @returns {object|null}
- */
-export function findUserById(idOrUsername) {
+export async function findUserById(idOrUsername) {
   if (!idOrUsername) return null;
-  return dataStore.users.find(
-    (u) => u.id === idOrUsername || u.username === idOrUsername
-  ) || null;
+  return prisma.user.findFirst({
+    where: {
+      OR: [
+        { id: idOrUsername },
+        { username: idOrUsername }
+      ]
+    }
+  });
 }
 
-export function getUserDashboardData(identifier) {
+export async function getUserDashboardData(identifier) {
   if (!identifier) return null;
-  const cleanId = identifier.trim().toLowerCase();
-  const inputDigits = identifier.replace(/\D/g, '');
 
-  const matchPhone = (phoneStr) => {
-    if (!phoneStr) return false;
-    const pClean = phoneStr.trim().toLowerCase();
-    if (pClean === cleanId) return true;
-    const pDigits = phoneStr.replace(/\D/g, '');
-    if (inputDigits.length >= 10 && pDigits.length >= 10) {
-      return pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits);
-    }
-    return false;
-  };
+  const userObj = await findUserRecord(identifier);
+  let memberObj = await findMemberRecord(identifier);
 
-  // Find User account
-  const userObj = dataStore.users.find(u => 
-    (u.username && u.username.toLowerCase() === cleanId) || 
-    matchPhone(u.phone)
-  );
-
-  // Find Member record
-  let memberObj = dataStore.members.find(m => 
-    (m.memberId && m.memberId.toLowerCase() === cleanId) || 
-    matchPhone(m.phone) ||
-    (userObj && m.memberId === userObj.username) ||
-    (userObj && matchPhone(m.phone))
-  );
-
-  // If not found in members, look in applications
-  let appObj = null;
-  if (!memberObj) {
-    appObj = dataStore.applications.find(a => matchPhone(a.phone) || (userObj && userObj.phone === a.phone));
+  if (!memberObj && userObj) {
+    memberObj = await findMemberRecord(userObj.username);
   }
 
-  // If still no member or application found, return basic user profile
+  let appObj = null;
+  if (!memberObj) {
+    const cleanId = identifier.trim().toLowerCase();
+    const inputDigits = identifier.replace(/\D/g, '');
+    appObj = await prisma.application.findFirst({
+      where: { phone: identifier.trim() }
+    });
+    if (!appObj && userObj && userObj.phone) {
+      appObj = await prisma.application.findFirst({
+        where: { phone: userObj.phone }
+      });
+    }
+    if (!appObj && inputDigits.length >= 10) {
+      const allApps = await prisma.application.findMany();
+      for (const a of allApps) {
+        const pDigits = a.phone.replace(/\D/g, '');
+        if (pDigits.length >= 10 && (pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits))) {
+          appObj = a;
+          break;
+        }
+      }
+    }
+  }
+
   if (!memberObj && !appObj) {
     return {
       user: userObj || { name: identifier, username: identifier, role: 'USER' },
@@ -241,9 +260,8 @@ export function getUserDashboardData(identifier) {
     };
   }
 
-  // Construct active member profile if using appObj
   const activeMember = memberObj || {
-    memberId: `Plan10-${100 + dataStore.members.length + 1}`,
+    memberId: `Plan10-${100 + (await prisma.member.count()) + 1}`,
     name: appObj.applicantName,
     phone: appObj.phone,
     nid: appObj.nid || '19922691234567891',
@@ -252,19 +270,27 @@ export function getUserDashboardData(identifier) {
     monthlyProfit: appObj.capitalAmount ? (appObj.capitalAmount / 100000) * 3000 : 0,
     monthlyCapitalRefund: appObj.durationMonths ? Math.round((appObj.capitalAmount || 0) / appObj.durationMonths) : 0,
     monthlyTotalPayout: (appObj.capitalAmount ? (appObj.capitalAmount / 100000) * 3000 : 0) + (appObj.durationMonths ? Math.round((appObj.capitalAmount || 0) / appObj.durationMonths) : 0),
-    joinDate: appObj.submittedAt ? appObj.submittedAt.split('T')[0] : new Date().toISOString().split('T')[0],
+    joinDate: appObj.submittedAt ? ensureISOString(appObj.submittedAt).split('T')[0] : new Date().toISOString().split('T')[0],
     status: appObj.status === 'APPROVED' ? 'ACTIVE' : 'PENDING',
-    nomineeName: appObj ? appObj.nomineeName || 'Nominee Pending' : 'Nominee Pending',
-    relation: appObj ? appObj.relation || 'Legal Heir' : 'Legal Heir',
-    fatherName: memberObj ? memberObj.fatherName || '' : (appObj ? appObj.fatherName || '' : ''),
-    address: memberObj ? memberObj.address || '' : (appObj ? appObj.address || '' : ''),
-    referredBy: null
+    nomineeName: appObj.nomineeName || 'Nominee Pending',
+    relation: appObj.relation || 'Legal Heir',
+    fatherName: appObj.fatherName || '',
+    address: appObj.address || '',
+    referredBy: appObj.referredBy || null,
+    buyerReferredBy: null,
+    buyerParent: null,
+    buyerLeft: null,
+    buyerRight: null,
+    investorParent: null,
+    investorLeft: null,
+    investorRight: null
   };
 
-  // Generate 33-Month Complete Payout Schedule
   const termMonths = activeMember.termMonths || 33;
   const joinDateObj = new Date(activeMember.joinDate || '2026-01-01');
-  const existingPayouts = dataStore.payouts.filter(p => p.memberId === activeMember.memberId);
+  const existingPayouts = await prisma.payout.findMany({
+    where: { memberId: activeMember.memberId }
+  });
 
   const schedule = [];
   let totalPaidSoFar = 0;
@@ -309,9 +335,11 @@ export function getUserDashboardData(identifier) {
     });
   }
 
-  // Generate Multilevel Referral Tree & Bonus Calculations
+  // Get all members for referral calculations
+  const allMembers = await prisma.member.findMany();
+
   // Level 1: Direct referrals
-  const level1 = dataStore.members.filter(m => m.referredBy === activeMember.memberId);
+  const level1 = allMembers.filter(m => m.referredBy === activeMember.memberId);
   
   let totalEarnedBonus = 0;
   let totalTeamVolume = 0;
@@ -319,7 +347,6 @@ export function getUserDashboardData(identifier) {
 
   const buildTreeNodes = (memberList, levelNum) => {
     return memberList.map(m => {
-      // Calculate bonus percentage based on level: L1 (5%), L2 (3%), L3 (1%), L4+ (0%)
       let bonusPercent = 0;
       if (levelNum === 1) bonusPercent = 5;
       else if (levelNum === 2) bonusPercent = 3;
@@ -331,7 +358,7 @@ export function getUserDashboardData(identifier) {
       totalTeamCount += 1;
       
       const children = buildTreeNodes(
-        dataStore.members.filter(sub => sub.referredBy === m.memberId), 
+        allMembers.filter(sub => sub.referredBy === m.memberId), 
         levelNum + 1
       );
 
@@ -350,22 +377,20 @@ export function getUserDashboardData(identifier) {
 
   const tree = buildTreeNodes(level1, 1);
 
-  // Generate Buyer Referral Tree & Bonus Calculations
   // Level 1: Direct buyer referrals
-  const buyerLevel1 = dataStore.members.filter(m => m.buyerReferredBy === activeMember.memberId);
+  const buyerLevel1 = allMembers.filter(m => m.buyerReferredBy === activeMember.memberId);
   
   let totalBuyerEarnedBonus = 0;
   let totalBuyerTeamCount = 0;
 
   const buildBuyerTreeNodes = (memberList, levelNum) => {
     return memberList.map(m => {
-      // Direct referral bonus is flat 500 BDT for L1 only
       const bonus = levelNum === 1 ? 500 : 0;
       totalBuyerEarnedBonus += bonus;
       totalBuyerTeamCount += 1;
       
       const children = buildBuyerTreeNodes(
-        dataStore.members.filter(sub => sub.buyerReferredBy === m.memberId), 
+        allMembers.filter(sub => sub.buyerReferredBy === m.memberId), 
         levelNum + 1
       );
 
@@ -383,7 +408,14 @@ export function getUserDashboardData(identifier) {
 
   const buyerTree = buildBuyerTreeNodes(buyerLevel1, 1);
 
-  const ordersList = dataStore.orders ? dataStore.orders.filter(o => o.username === activeMember.phone || o.username === activeMember.memberId) : [];
+  const ordersList = await prisma.order.findMany({
+    where: {
+      OR: [
+        { username: activeMember.phone },
+        { username: activeMember.memberId }
+      ]
+    }
+  });
   
   const hasInvested = activeMember && Number(activeMember.capitalInvested) > 0;
   const hasOrders = ordersList.length > 0;
@@ -396,12 +428,12 @@ export function getUserDashboardData(identifier) {
     roleProfile = 'BUYER';
   }
 
-  const wallet = getWallet(activeMember.memberId || activeMember.phone);
-  const notifications = getNotifications(activeMember.memberId || activeMember.phone);
-  const withdrawals = getWithdrawals(activeMember.memberId || activeMember.phone);
+  const wallet = await getWallet(activeMember.memberId || activeMember.phone);
+  const notifications = await getNotifications(activeMember.memberId || activeMember.phone);
+  const withdrawals = await getWithdrawals(activeMember.memberId || activeMember.phone);
 
-  const buyerBinaryTree = buildBinaryTreeUI(activeMember.memberId, 'buyer');
-  const investorBinaryTree = buildBinaryTreeUI(activeMember.memberId, 'investor');
+  const buyerBinaryTree = await buildBinaryTreeUI(activeMember.memberId, 'buyer');
+  const investorBinaryTree = await buildBinaryTreeUI(activeMember.memberId, 'investor');
 
   return {
     user: userObj || {
@@ -449,13 +481,13 @@ export function getUserDashboardData(identifier) {
   };
 }
 
-export function isPhoneRegistered(phoneStr) {
+export async function isPhoneRegistered(phoneStr) {
   if (!phoneStr) return false;
   const inputClean = phoneStr.trim().toLowerCase();
   const inputDigits = phoneStr.replace(/\D/g, '');
   if (!inputDigits) return false;
 
-  const match = (p) => {
+  const matchCondition = (p) => {
     if (!p) return false;
     const pClean = p.trim().toLowerCase();
     if (pClean === inputClean) return true;
@@ -466,24 +498,25 @@ export function isPhoneRegistered(phoneStr) {
     return false;
   };
 
-  const existsInApps = dataStore.applications.some(a => match(a.phone));
-  if (existsInApps) return true;
+  const allApps = await prisma.application.findMany();
+  if (allApps.some(a => matchCondition(a.phone))) return true;
 
-  const existsInMembers = dataStore.members.some(m => match(m.phone));
-  if (existsInMembers) return true;
+  const allMembers = await prisma.member.findMany();
+  if (allMembers.some(m => matchCondition(m.phone))) return true;
 
-  const existsInUsers = dataStore.users.some(u => match(u.phone));
-  if (existsInUsers) return true;
+  const allUsers = await prisma.user.findMany();
+  if (allUsers.some(u => matchCondition(u.phone))) return true;
 
   return false;
 }
 
-export function addApplication(appData) {
-  if (isPhoneRegistered(appData.phone)) {
+export async function addApplication(appData) {
+  if (await isPhoneRegistered(appData.phone)) {
     throw new Error('This mobile number is already registered in our database. Please sign in or use a different mobile number.');
   }
 
-  const maxNum = dataStore.applications.reduce((max, app) => {
+  const allApps = await prisma.application.findMany();
+  const maxNum = allApps.reduce((max, app) => {
     const match = app.id.match(/(\d+)$/);
     if (match) {
       const num = parseInt(match[1], 10);
@@ -494,22 +527,35 @@ export function addApplication(appData) {
 
   const nextNum = maxNum + 1;
   const padding = nextNum < 10 ? '00' : (nextNum < 100 ? '0' : '');
+  const id = `APP-2026-${padding}${nextNum}`;
 
-  const newApp = {
-    id: `APP-2026-${padding}${nextNum}`,
-    ...appData,
-    status: 'PENDING',
-    submittedAt: new Date().toISOString()
-  };
-  dataStore.applications.unshift(newApp);
+  const newApp = await prisma.application.create({
+    data: {
+      id,
+      applicantName: appData.applicantName,
+      phone: appData.phone,
+      nid: appData.nid,
+      password: needsRehash(appData.password) ? hashPassword(appData.password) : appData.password,
+      email: appData.email || null,
+      capitalAmount: appData.capitalAmount ? Number(appData.capitalAmount) : null,
+      durationMonths: appData.durationMonths ? Number(appData.durationMonths) : null,
+      purpose: appData.purpose,
+      nomineeName: appData.nomineeName || null,
+      relation: appData.relation || null,
+      fatherName: appData.fatherName || null,
+      address: appData.address || null,
+      referredBy: appData.referredBy || null,
+      status: 'PENDING',
+      submittedAt: new Date()
+    }
+  });
 
-  // If this is a product buyer registration, automatically place the order!
   if (appData.purpose === 'Buy Product' && appData.productId) {
-    const product = dataStore.products.find(p => p.id === Number(appData.productId));
+    const product = await prisma.product.findUnique({ where: { id: Number(appData.productId) } });
     const productName = product ? product.name : 'PLAN-10 Product';
     const price = product ? product.price : 0;
     
-    addOrder({
+    await addOrder({
       username: appData.phone,
       productId: appData.productId,
       productName: productName,
@@ -517,19 +563,26 @@ export function addApplication(appData) {
     });
   }
 
-  saveDataStoreToFile(dataStore);
   return newApp;
 }
 
-export function updateApplicationStatus(id, status) {
-  const app = dataStore.applications.find((a) => a.id === id);
-  if (app) {
-    app.status = status;
-    if (status === 'APPROVED') {
-      const memberId = `Plan10-${100 + dataStore.members.length + 1}`;
-      const monthlyProfit = app.capitalAmount ? (app.capitalAmount / 100000) * 3000 : 0;
-      const monthlyCapitalRefund = app.durationMonths ? Math.round((app.capitalAmount || 0) / app.durationMonths) : 0;
-      const newMember = {
+export async function updateApplicationStatus(id, status) {
+  const app = await prisma.application.findUnique({ where: { id } });
+  if (!app) return null;
+
+  const updatedApp = await prisma.application.update({
+    where: { id },
+    data: { status }
+  });
+
+  if (status === 'APPROVED') {
+    const memberCount = await prisma.member.count();
+    const memberId = `Plan10-${100 + memberCount + 1}`;
+    const monthlyProfit = app.capitalAmount ? (app.capitalAmount / 100000) * 3000 : 0;
+    const monthlyCapitalRefund = app.durationMonths ? Math.round((app.capitalAmount || 0) / app.durationMonths) : 0;
+    
+    const newMember = await prisma.member.create({
+      data: {
         memberId,
         name: app.applicantName,
         phone: app.phone,
@@ -544,78 +597,83 @@ export function updateApplicationStatus(id, status) {
         nomineeName: app.nomineeName || 'Legal Heir',
         relation: app.relation || 'Family',
         referredBy: app.referredBy || null
-      };
-      dataStore.members.push(newMember);
-
-      // Binary Tree Placements
-      if (app.purpose === 'Buy Product') {
-        addToBinaryTree('buyer', memberId);
-      } else if (app.purpose === 'Investment') {
-        addToBinaryTree('investor', memberId);
       }
+    });
 
-      // Referral Reward Crediting
-      if (newMember.referredBy) {
-        const cleanRefCode = newMember.referredBy.trim().toLowerCase();
-        const refDigits = cleanRefCode.replace(/\D/g, '');
-        
-        const matchPhone = (phoneStr) => {
-          if (!phoneStr) return false;
-          const pClean = phoneStr.trim().toLowerCase();
-          if (pClean === cleanRefCode) return true;
-          const pDigits = phoneStr.replace(/\D/g, '');
-          if (refDigits.length >= 6 && pDigits.length >= 6) {
-            return pDigits === refDigits || pDigits.endsWith(refDigits) || refDigits.endsWith(pDigits);
-          }
-          return false;
-        };
+    if (app.purpose === 'Buy Product') {
+      await addToBinaryTree('buyer', memberId);
+    } else if (app.purpose === 'Investment') {
+      await addToBinaryTree('investor', memberId);
+    }
 
-        let sponsor = dataStore.members.find(m => 
-          (m.memberId && m.memberId.toLowerCase() === cleanRefCode) || matchPhone(m.phone)
-        );
-
-        if (!sponsor) {
-          const sponsorUser = dataStore.users.find(u => 
-            (u.username && u.username.toLowerCase() === cleanRefCode) || matchPhone(u.phone)
-          );
-          if (sponsorUser) {
-            sponsor = { memberId: sponsorUser.username, name: sponsorUser.name };
-          }
-        }
-
-        if (sponsor) {
-          const sponsorId = sponsor.memberId;
-          if (app.purpose === 'Buy Product') {
-            updateWalletBalance(sponsorId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for new Buyer (${newMember.name})`);
-          } else if (app.purpose === 'Investment') {
-            const bonusAmount = (app.capitalAmount || 0) * 0.06;
-            if (bonusAmount > 0) {
-              updateWalletBalance(sponsorId, bonusAmount, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for new Investor (${newMember.name})`);
-            }
-          }
-        }
-      }
-
-      const inputDigits = app.phone ? app.phone.replace(/\D/g, '') : '';
-      const existingUser = dataStore.users.find(u => {
-        if (u.username === memberId) return true;
-        if (u.phone && inputDigits.length >= 6) {
-          const uDigits = u.phone.replace(/\D/g, '');
-          if (uDigits === inputDigits || uDigits.endsWith(inputDigits) || inputDigits.endsWith(uDigits)) return true;
+    if (newMember.referredBy) {
+      const cleanRefCode = newMember.referredBy.trim().toLowerCase();
+      const refDigits = cleanRefCode.replace(/\D/g, '');
+      
+      const matchPhone = (phoneStr) => {
+        if (!phoneStr) return false;
+        const pClean = phoneStr.trim().toLowerCase();
+        if (pClean === cleanRefCode) return true;
+        const pDigits = phoneStr.replace(/\D/g, '');
+        if (refDigits.length >= 10 && pDigits.length >= 10) {
+          return pDigits === refDigits || pDigits.endsWith(refDigits) || refDigits.endsWith(pDigits);
         }
         return false;
-      });
+      };
 
-      if (existingUser) {
-        if (app.password) {
-          // Hash the password if it isn't already hashed
-          existingUser.password = needsRehash(app.password) ? hashPassword(app.password) : app.password;
+      const allMembers = await prisma.member.findMany();
+      let sponsor = allMembers.find(m => 
+        (m.memberId && m.memberId.toLowerCase() === cleanRefCode) || matchPhone(m.phone)
+      );
+
+      if (!sponsor) {
+        const allUsers = await prisma.user.findMany();
+        const sponsorUser = allUsers.find(u => 
+          (u.username && u.username.toLowerCase() === cleanRefCode) || matchPhone(u.phone)
+        );
+        if (sponsorUser) {
+          sponsor = { memberId: sponsorUser.username, name: sponsorUser.name };
         }
-        if (app.phone) existingUser.phone = app.phone;
-        existingUser.role = 'USER';
-      } else {
-        const rawPassword = app.password || 'user123';
-        const newUser = {
+      }
+
+      if (sponsor) {
+        const sponsorId = sponsor.memberId;
+        if (app.purpose === 'Buy Product') {
+          await updateWalletBalance(sponsorId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for new Buyer (${newMember.name})`);
+        } else if (app.purpose === 'Investment') {
+          const bonusAmount = (app.capitalAmount || 0) * 0.06;
+          if (bonusAmount > 0) {
+            await updateWalletBalance(sponsorId, bonusAmount, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for new Investor (${newMember.name})`);
+          }
+        }
+      }
+    }
+
+    const inputDigits = app.phone ? app.phone.replace(/\D/g, '') : '';
+    const allUsers = await prisma.user.findMany();
+    const existingUser = allUsers.find(u => {
+      if (u.username === memberId) return true;
+      if (u.phone && inputDigits.length >= 10) {
+        const uDigits = u.phone.replace(/\D/g, '');
+        if (uDigits === inputDigits || uDigits.endsWith(inputDigits) || inputDigits.endsWith(uDigits)) return true;
+      }
+      return false;
+    });
+
+    if (existingUser) {
+      const dataUpdate = { role: 'USER' };
+      if (app.password) {
+        dataUpdate.password = needsRehash(app.password) ? hashPassword(app.password) : app.password;
+      }
+      if (app.phone) dataUpdate.phone = app.phone;
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: dataUpdate
+      });
+    } else {
+      const rawPassword = app.password || 'user123';
+      await prisma.user.create({
+        data: {
           id: `usr_${Date.now()}`,
           username: memberId,
           phone: app.phone,
@@ -623,45 +681,43 @@ export function updateApplicationStatus(id, status) {
           name: app.applicantName,
           email: app.email || `${app.applicantName.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
           role: 'USER',
-          createdAt: new Date().toISOString()
-        };
-        dataStore.users.push(newUser);
-      }
+          createdAt: new Date()
+        }
+      });
     }
-    saveDataStoreToFile(dataStore);
   }
-  return app;
+
+  return updatedApp;
 }
 
-export function getPayouts() {
-  if (!dataStore.payouts) {
-    dataStore.payouts = [];
-  }
-  let modified = false;
+export async function getPayouts() {
   const todayStr = new Date().toISOString().split('T')[0];
+  const members = await prisma.member.findMany({ where: { status: 'ACTIVE' } });
 
-  if (dataStore.members && Array.isArray(dataStore.members)) {
-    for (const member of dataStore.members) {
-      if (member.capitalInvested > 0 && member.termMonths > 0 && member.status === 'ACTIVE') {
-        for (let m = 1; m <= member.termMonths; m++) {
-          const exists = dataStore.payouts.some(
-            (p) => p.memberId === member.memberId && p.monthNumber === m
-          );
-          if (!exists) {
-            let dueDateStr = todayStr;
-            try {
-              const joinDate = member.joinDate || todayStr;
-              const pDate = new Date(joinDate);
-              if (!isNaN(pDate.getTime())) {
-                pDate.setMonth(pDate.getMonth() + m);
-                dueDateStr = pDate.toISOString().split('T')[0];
-              }
-            } catch (e) {
-              console.error('Invalid date parsing for member', member.memberId, e);
+  let modified = false;
+
+  for (const member of members) {
+    if (member.capitalInvested > 0 && member.termMonths > 0) {
+      for (let m = 1; m <= member.termMonths; m++) {
+        const exists = await prisma.payout.findFirst({
+          where: { memberId: member.memberId, monthNumber: m }
+        });
+        if (!exists) {
+          let dueDateStr = todayStr;
+          try {
+            const joinDate = member.joinDate || todayStr;
+            const pDate = new Date(joinDate);
+            if (!isNaN(pDate.getTime())) {
+              pDate.setMonth(pDate.getMonth() + m);
+              dueDateStr = pDate.toISOString().split('T')[0];
             }
-            const status = dueDateStr < todayStr ? 'PAID' : 'PENDING';
+          } catch (e) {
+            console.error('Invalid date parsing for member', member.memberId, e);
+          }
+          const status = dueDateStr < todayStr ? 'PAID' : 'PENDING';
 
-            const newPayout = {
+          await prisma.payout.create({
+            data: {
               id: `PAY-${member.memberId}-${m}`,
               memberId: member.memberId,
               memberName: member.name,
@@ -672,90 +728,81 @@ export function getPayouts() {
               totalPayout: member.monthlyTotalPayout || 0,
               status: status,
               method: 'Bank Wire / bKash',
-              createdAt: new Date().toISOString()
-            };
-            dataStore.payouts.push(newPayout);
-            modified = true;
-          }
+              createdAt: new Date()
+            }
+          });
+          modified = true;
         }
       }
     }
   }
 
-  if (modified) {
-    saveDataStoreToFile(dataStore);
-  }
-
-  return [...dataStore.payouts].sort((a, b) => {
+  const payouts = await prisma.payout.findMany();
+  return payouts.sort((a, b) => {
     if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
     if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
     return new Date(a.dueDate) - new Date(b.dueDate);
   });
 }
 
-export function updatePayoutStatus(id, status) {
-  const payout = dataStore.payouts.find((p) => p.id === id);
-  if (payout) {
-    payout.status = status;
-    saveDataStoreToFile(dataStore);
-  }
-  return payout;
+export async function updatePayoutStatus(id, status) {
+  const exists = await prisma.payout.findUnique({ where: { id } });
+  if (!exists) return null;
+
+  return prisma.payout.update({
+    where: { id },
+    data: { status }
+  });
 }
 
-export function addInquiry(inquiryData) {
-  const newInq = {
-    id: `INQ-${500 + dataStore.inquiries.length + 1}`,
-    ...inquiryData,
-    date: new Date().toISOString(),
-    status: 'UNREAD'
-  };
-  dataStore.inquiries.unshift(newInq);
-  saveDataStoreToFile(dataStore);
-  return newInq;
+export async function addInquiry(inquiryData) {
+  const total = await prisma.inquiry.count();
+  const id = `INQ-${500 + total + 1}`;
+  return prisma.inquiry.create({
+    data: {
+      id,
+      name: inquiryData.name,
+      phone: inquiryData.phone,
+      message: inquiryData.message,
+      status: 'UNREAD',
+      date: new Date()
+    }
+  });
 }
 
-export function deleteApplication(id) {
-  const index = dataStore.applications.findIndex((a) => a.id === id);
-  if (index !== -1) {
-    const deleted = dataStore.applications.splice(index, 1)[0];
-    saveDataStoreToFile(dataStore);
-    return deleted;
-  }
-  return null;
+export async function deleteApplication(id) {
+  const app = await prisma.application.findUnique({ where: { id } });
+  if (!app) return null;
+  await prisma.application.delete({ where: { id } });
+  return app;
 }
 
-export function deleteMember(memberId) {
-  const index = dataStore.members.findIndex((m) => m.memberId === memberId);
-  if (index !== -1) {
-    const deleted = dataStore.members.splice(index, 1)[0];
-    saveDataStoreToFile(dataStore);
-    return deleted;
-  }
-  return null;
+export async function deleteMember(memberId) {
+  const m = await prisma.member.findUnique({ where: { memberId } });
+  if (!m) return null;
+  await prisma.member.delete({ where: { memberId } });
+  return m;
 }
 
-export function deleteInquiry(id) {
-  const index = dataStore.inquiries.findIndex((i) => i.id === id);
-  if (index !== -1) {
-    const deleted = dataStore.inquiries.splice(index, 1)[0];
-    saveDataStoreToFile(dataStore);
-    return deleted;
-  }
-  return null;
+export async function deleteInquiry(id) {
+  const inq = await prisma.inquiry.findUnique({ where: { id } });
+  if (!inq) return null;
+  await prisma.inquiry.delete({ where: { id } });
+  return inq;
 }
 
-export function deletePayout(id) {
-  const index = dataStore.payouts.findIndex((p) => p.id === id);
-  if (index !== -1) {
-    const deleted = dataStore.payouts.splice(index, 1)[0];
-    saveDataStoreToFile(dataStore);
-    return deleted;
-  }
-  return null;
+export async function deletePayout(id) {
+  const p = await prisma.payout.findUnique({ where: { id } });
+  if (!p) return null;
+  await prisma.payout.delete({ where: { id } });
+  return p;
 }
 
-export function getAllUsersWithRoles() {
-  const userList = dataStore.users.map(u => ({
+export async function getAllUsersWithRoles() {
+  const users = await prisma.user.findMany();
+  const members = await prisma.member.findMany();
+
+  const userList = users.map(u => ({
     id: u.id,
     username: u.username,
     name: u.name,
@@ -764,7 +811,7 @@ export function getAllUsersWithRoles() {
     role: u.role || 'USER'
   }));
 
-  dataStore.members.forEach(m => {
+  members.forEach(m => {
     const exists = userList.find(u => u.username === m.memberId || (u.phone && m.phone && u.phone === m.phone));
     if (!exists) {
       userList.push({
@@ -781,16 +828,29 @@ export function getAllUsersWithRoles() {
   return userList;
 }
 
-export function updateUserAdminRole(username, newRole) {
-  let updated = false;
-  const userObj = dataStore.users.find(u => u.username === username || u.id === username);
+export async function updateUserAdminRole(username, newRole) {
+  const userObj = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { username: username },
+        { id: username }
+      ]
+    }
+  });
+
   if (userObj) {
-    userObj.role = newRole;
-    updated = true;
-  } else {
-    const memberObj = dataStore.members.find(m => m.memberId === username);
-    if (memberObj) {
-      const newUser = {
+    await prisma.user.update({
+      where: { id: userObj.id },
+      data: { role: newRole }
+    });
+    await addSystemLog(`Admin Authority Delegation: ${username} set to ${newRole}`, 'Internal System Process', 'Success');
+    return true;
+  }
+
+  const memberObj = await prisma.member.findUnique({ where: { memberId: username } });
+  if (memberObj) {
+    await prisma.user.create({
+      data: {
         id: `usr_${memberObj.memberId}`,
         username: memberObj.memberId,
         phone: memberObj.phone,
@@ -798,115 +858,84 @@ export function updateUserAdminRole(username, newRole) {
         name: memberObj.name,
         email: `${memberObj.name.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
         role: newRole,
-        createdAt: new Date().toISOString()
-      };
-      dataStore.users.push(newUser);
-      updated = true;
-    }
+        createdAt: new Date()
+      }
+    });
+    await addSystemLog(`Admin Authority Delegation: ${username} set to ${newRole}`, 'Internal System Process', 'Success');
+    return true;
   }
 
-  if (updated) {
-    saveDataStoreToFile(dataStore);
-    addSystemLog(`Admin Authority Delegation: ${username} set to ${newRole}`, 'Internal System Process', 'Success');
-  }
-  return updated;
+  return false;
 }
 
-
-export function updateMemberProfile(identifier, updateData) {
+export async function updateMemberProfile(identifier, updateData) {
   if (!identifier) return false;
   const cleanId = identifier.trim().toLowerCase();
-  const inputDigits = identifier.replace(/\D/g, '');
 
-  const matchPhone = (phoneStr) => {
-    if (!phoneStr) return false;
-    const pClean = phoneStr.trim().toLowerCase();
-    if (pClean === cleanId) return true;
-    const pDigits = phoneStr.replace(/\D/g, '');
-    if (inputDigits.length >= 10 && pDigits.length >= 10) {
-      return pDigits === inputDigits || pDigits.endsWith(inputDigits) || inputDigits.endsWith(pDigits);
-    }
-    return false;
-  };
-
+  const memberObj = await findMemberRecord(identifier);
   let updated = false;
 
-  // 1. Update in members array
-  const memberObj = dataStore.members.find(m => 
-    (m.memberId && m.memberId.toLowerCase() === cleanId) || matchPhone(m.phone)
-  );
-
   if (memberObj) {
-    if (updateData.name !== undefined) memberObj.name = updateData.name;
-    if (updateData.phone !== undefined) memberObj.phone = updateData.phone;
-    if (updateData.nid !== undefined) memberObj.nid = updateData.nid;
-    if (updateData.fatherName !== undefined) memberObj.fatherName = updateData.fatherName;
-    if (updateData.address !== undefined) memberObj.address = updateData.address;
-    if (updateData.nomineeName !== undefined) memberObj.nomineeName = updateData.nomineeName;
-    if (updateData.relation !== undefined) memberObj.relation = updateData.relation;
+    const mUpdate = {};
+    if (updateData.name !== undefined) mUpdate.name = updateData.name;
+    if (updateData.phone !== undefined) mUpdate.phone = updateData.phone;
+    if (updateData.nid !== undefined) mUpdate.nid = updateData.nid;
+    if (updateData.fatherName !== undefined) mUpdate.fatherName = updateData.fatherName;
+    if (updateData.address !== undefined) mUpdate.address = updateData.address;
+    if (updateData.nomineeName !== undefined) mUpdate.nomineeName = updateData.nomineeName;
+    if (updateData.relation !== undefined) mUpdate.relation = updateData.relation;
+
+    await prisma.member.update({
+      where: { memberId: memberObj.memberId },
+      data: mUpdate
+    });
     updated = true;
   }
 
-  // 2. Update matching user in users array
-  const userObj = dataStore.users.find(u => 
-    (u.username && u.username.toLowerCase() === cleanId) || matchPhone(u.phone) || (memberObj && u.username === memberObj.memberId)
-  );
-
+  const userObj = await findUserRecord(identifier);
   if (userObj) {
-    if (updateData.name !== undefined) userObj.name = updateData.name;
-    if (updateData.phone !== undefined) userObj.phone = updateData.phone;
+    const uUpdate = {};
+    if (updateData.name !== undefined) uUpdate.name = updateData.name;
+    if (updateData.phone !== undefined) uUpdate.phone = updateData.phone;
+
+    await prisma.user.update({
+      where: { id: userObj.id },
+      data: uUpdate
+    });
     updated = true;
   }
 
-  // 3. Update matching application in applications array
-  const appObj = dataStore.applications.find(a => 
-    matchPhone(a.phone) || (memberObj && matchPhone(memberObj.phone))
-  );
-
+  // Update matching application
+  let appObj = await prisma.application.findFirst({ where: { phone: identifier.trim() } });
+  if (!appObj && memberObj) {
+    appObj = await prisma.application.findFirst({ where: { phone: memberObj.phone } });
+  }
   if (appObj) {
-    if (updateData.name !== undefined) appObj.applicantName = updateData.name;
-    if (updateData.phone !== undefined) appObj.phone = updateData.phone;
-    if (updateData.nid !== undefined) appObj.nid = updateData.nid;
-    if (updateData.fatherName !== undefined) appObj.fatherName = updateData.fatherName;
-    if (updateData.address !== undefined) appObj.address = updateData.address;
-    if (updateData.nomineeName !== undefined) appObj.nomineeName = updateData.nomineeName;
-    if (updateData.relation !== undefined) appObj.relation = updateData.relation;
-    updated = true;
-  }
+    const aUpdate = {};
+    if (updateData.name !== undefined) aUpdate.applicantName = updateData.name;
+    if (updateData.phone !== undefined) aUpdate.phone = updateData.phone;
+    if (updateData.nid !== undefined) aUpdate.nid = updateData.nid;
+    if (updateData.fatherName !== undefined) aUpdate.fatherName = updateData.fatherName;
+    if (updateData.address !== undefined) aUpdate.address = updateData.address;
+    if (updateData.nomineeName !== undefined) aUpdate.nomineeName = updateData.nomineeName;
+    if (updateData.relation !== undefined) aUpdate.relation = updateData.relation;
 
-  if (updated) {
-    saveDataStoreToFile(dataStore);
+    await prisma.application.update({
+      where: { id: appObj.id },
+      data: aUpdate
+    });
+    updated = true;
   }
 
   return updated;
 }
 
-export function bindReferralCode(memberIdentifier, referrerCode, type = 'investor') {
+export async function bindReferralCode(memberIdentifier, referrerCode, type = 'investor') {
   if (!memberIdentifier || !referrerCode) {
     return { success: false, message: 'Both member identifier and referral code are required.' };
   }
 
-  const cleanMemberId = memberIdentifier.trim().toLowerCase();
-  const cleanRefCode = referrerCode.trim().toLowerCase();
-  const memberDigits = memberIdentifier.replace(/\D/g, '');
-  const refDigits = referrerCode.replace(/\D/g, '');
-
-  const matchPhone = (phoneStr, targetClean, targetDigits) => {
-    if (!phoneStr) return false;
-    const pClean = phoneStr.trim().toLowerCase();
-    if (pClean === targetClean) return true;
-    const pDigits = phoneStr.replace(/\D/g, '');
-    if (targetDigits.length >= 10 && pDigits.length >= 10) {
-      return pDigits === targetDigits || pDigits.endsWith(targetDigits) || targetDigits.endsWith(pDigits);
-    }
-    return false;
-  };
-
-  // Find target member updating referral
-  let targetMember = dataStore.members.find(m => 
-    (m.memberId && m.memberId.toLowerCase() === cleanMemberId) || matchPhone(m.phone, cleanMemberId, memberDigits)
-  );
-
+  const targetMember = await findMemberRecord(memberIdentifier);
   if (!targetMember) {
     return { success: false, message: 'Member account not found.' };
   }
@@ -917,16 +946,9 @@ export function bindReferralCode(memberIdentifier, referrerCode, type = 'investo
     return { success: false, message: `Account is already linked to a ${type === 'buyer' ? 'buyer' : 'investor'} sponsor (${targetMember[refKey]}). This code can only be submitted once.` };
   }
 
-  // Find referrer member
-  let referrerMember = dataStore.members.find(m => 
-    (m.memberId && m.memberId.toLowerCase() === cleanRefCode) || matchPhone(m.phone, cleanRefCode, refDigits)
-  );
-
-  // Fallback to users array if not found in members
+  let referrerMember = await findMemberRecord(referrerCode);
   if (!referrerMember) {
-    const referrerUser = dataStore.users.find(u => 
-      (u.username && u.username.toLowerCase() === cleanRefCode) || matchPhone(u.phone, cleanRefCode, refDigits)
-    );
+    const referrerUser = await findUserRecord(referrerCode);
     if (referrerUser) {
       referrerMember = { memberId: referrerUser.username, name: referrerUser.name };
     }
@@ -940,27 +962,24 @@ export function bindReferralCode(memberIdentifier, referrerCode, type = 'investo
     return { success: false, message: 'You cannot use your own referral code as a sponsor.' };
   }
 
-  targetMember[refKey] = referrerMember.memberId;
+  await prisma.member.update({
+    where: { memberId: targetMember.memberId },
+    data: { [refKey]: referrerMember.memberId }
+  });
 
-  // Process referral commissions post-registration
   let hasAwarded = false;
-  
   if (type === 'buyer') {
-    // If buyer, flat 500 BDT bonus
-    updateWalletBalance(referrerMember.memberId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for linking Buyer (${targetMember.name})`);
+    await updateWalletBalance(referrerMember.memberId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for linking Buyer (${targetMember.name})`);
     hasAwarded = true;
   } else {
-    // If investor, flat 6% commission of capital
     if (targetMember.capitalInvested > 0) {
       const bonus = targetMember.capitalInvested * 0.06;
       if (bonus > 0) {
-        updateWalletBalance(referrerMember.memberId, bonus, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for linking Investor (${targetMember.name})`);
+        await updateWalletBalance(referrerMember.memberId, bonus, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for linking Investor (${targetMember.name})`);
         hasAwarded = true;
       }
     }
   }
-
-  saveDataStoreToFile(dataStore);
 
   return { 
     success: true, 
@@ -969,62 +988,72 @@ export function bindReferralCode(memberIdentifier, referrerCode, type = 'investo
   };
 }
 
-// Product Management Helpers
-export function getProducts() {
-  return dataStore.products || [];
+export async function getProducts() {
+  const list = await prisma.product.findMany();
+  return list.map(p => ({
+    ...p,
+    imageUrls: JSON.parse(p.imageUrls || '[]')
+  }));
 }
 
-export function addProduct(productData) {
-  const nextId = dataStore.products.length > 0 
-    ? Math.max(...dataStore.products.map(p => p.id)) + 1 
-    : 1;
+export async function addProduct(productData) {
+  const urls = productData.imageUrls || (productData.imageUrl ? [productData.imageUrl] : []);
+  const newProduct = await prisma.product.create({
+    data: {
+      name: productData.name,
+      brand: productData.brand || 'PLAN-10 Branded',
+      category: productData.category || 'Consumer Goods',
+      price: Number(productData.price) || 0,
+      description: productData.description || '',
+      imageUrl: urls[0] || '',
+      imageUrls: JSON.stringify(urls),
+      stockStatus: productData.stockStatus || 'IN_STOCK'
+    }
+  });
 
-  const newProduct = {
-    id: nextId,
-    name: productData.name,
-    brand: productData.brand || 'PLAN-10 Branded',
-    category: productData.category || 'Consumer Goods',
-    price: Number(productData.price) || 0,
-    description: productData.description || '',
-    imageUrl: productData.imageUrls?.[0] || productData.imageUrl || '',
-    imageUrls: productData.imageUrls || (productData.imageUrl ? [productData.imageUrl] : []),
-    stockStatus: productData.stockStatus || 'IN_STOCK'
+  return {
+    ...newProduct,
+    imageUrls: urls
   };
-
-  dataStore.products.push(newProduct);
-  saveDataStoreToFile(dataStore);
-  return newProduct;
 }
 
-export function updateProduct(id, productData) {
-  const product = dataStore.products.find(p => p.id === Number(id));
-  if (!product) return null;
+export async function updateProduct(id, productData) {
+  const numericId = Number(id);
+  const exists = await prisma.product.findUnique({ where: { id: numericId } });
+  if (!exists) return null;
 
-  if (productData.name !== undefined) product.name = productData.name;
-  if (productData.brand !== undefined) product.brand = productData.brand;
-  if (productData.category !== undefined) product.category = productData.category;
-  if (productData.price !== undefined) product.price = Number(productData.price);
-  if (productData.description !== undefined) product.description = productData.description;
-  if (productData.imageUrl !== undefined) product.imageUrl = productData.imageUrl;
+  const dataUpdate = {};
+  if (productData.name !== undefined) dataUpdate.name = productData.name;
+  if (productData.brand !== undefined) dataUpdate.brand = productData.brand;
+  if (productData.category !== undefined) dataUpdate.category = productData.category;
+  if (productData.price !== undefined) dataUpdate.price = Number(productData.price);
+  if (productData.description !== undefined) dataUpdate.description = productData.description;
+  if (productData.imageUrl !== undefined) dataUpdate.imageUrl = productData.imageUrl;
   if (productData.imageUrls !== undefined) {
-    product.imageUrls = productData.imageUrls;
-    product.imageUrl = productData.imageUrls[0] || '';
+    dataUpdate.imageUrls = JSON.stringify(productData.imageUrls);
+    dataUpdate.imageUrl = productData.imageUrls[0] || '';
   }
-  if (productData.stockStatus !== undefined) product.stockStatus = productData.stockStatus;
+  if (productData.stockStatus !== undefined) dataUpdate.stockStatus = productData.stockStatus;
 
-  saveDataStoreToFile(dataStore);
-  return product;
+  const updated = await prisma.product.update({
+    where: { id: numericId },
+    data: dataUpdate
+  });
+
+  return {
+    ...updated,
+    imageUrls: JSON.parse(updated.imageUrls || '[]')
+  };
 }
 
-function deleteProductPhotos(product) {
+async function deleteProductPhotos(product) {
   if (!product) return;
   const urls = [];
   if (product.imageUrl) urls.push(product.imageUrl);
-  if (product.imageUrls && Array.isArray(product.imageUrls)) {
-    product.imageUrls.forEach(url => {
-      if (!urls.includes(url)) urls.push(url);
-    });
-  }
+  const parsedUrls = JSON.parse(product.imageUrls || '[]');
+  parsedUrls.forEach(url => {
+    if (!urls.includes(url)) urls.push(url);
+  });
 
   urls.forEach(url => {
     if (typeof url === 'string' && url.startsWith('/uploads/')) {
@@ -1040,326 +1069,405 @@ function deleteProductPhotos(product) {
   });
 }
 
-export function deleteProduct(id) {
-  const index = dataStore.products.findIndex(p => p.id === Number(id));
-  if (index !== -1) {
-    const deleted = dataStore.products.splice(index, 1)[0];
-    deleteProductPhotos(deleted);
-    saveDataStoreToFile(dataStore);
-    return deleted;
-  }
-  return null;
+export async function deleteProduct(id) {
+  const numericId = Number(id);
+  const p = await prisma.product.findUnique({ where: { id: numericId } });
+  if (!p) return null;
+
+  await deleteProductPhotos(p);
+  await prisma.product.delete({ where: { id: numericId } });
+  return {
+    ...p,
+    imageUrls: JSON.parse(p.imageUrls || '[]')
+  };
 }
 
-// Categories Management Helpers
-export function getCategories() {
-  return dataStore.categories || [];
+export async function getCategories() {
+  const list = await prisma.category.findMany();
+  return list.map(c => c.name);
 }
 
-export function addCategory(name) {
-  if (!dataStore.categories) dataStore.categories = [];
+export async function addCategory(name) {
   const cleanName = name.trim();
-  if (dataStore.categories.some(c => c.toLowerCase() === cleanName.toLowerCase())) {
+  const exists = await prisma.category.findUnique({ where: { name: cleanName } });
+  if (exists) {
     return { success: false, message: 'Category already exists.' };
   }
-  dataStore.categories.push(cleanName);
-  saveDataStoreToFile(dataStore);
-  return { success: true, categories: dataStore.categories };
+
+  await prisma.category.create({ data: { name: cleanName } });
+  const list = await getCategories();
+  return { success: true, categories: list };
 }
 
-// System Database Operations: Reset and Import/Restore
-// System Database Operations: Reset and Import/Restore with logging support
-export function resetDataStore() {
-  // Reset users array to only contain the default primary superadmin account
-  // Password is hashed — default plaintext is 'admin' (auto-migrates on first login)
-  dataStore.users = [{
-    id: 'usr_admin',
-    username: 'admin',
-    password: hashPassword('admin'),
-    name: 'Corporate Executive Admin',
-    email: 'admin@plan10bd.com',
-    role: 'ADMIN',
-    createdAt: new Date().toISOString()
-  }];
+export async function resetDataStore() {
+  await prisma.$transaction([
+    prisma.transaction.deleteMany(),
+    prisma.wallet.deleteMany(),
+    prisma.payout.deleteMany(),
+    prisma.member.deleteMany(),
+    prisma.application.deleteMany(),
+    prisma.notification.deleteMany(),
+    prisma.order.deleteMany(),
+    prisma.inquiry.deleteMany(),
+    prisma.category.deleteMany(),
+    prisma.systemLog.deleteMany(),
+    prisma.user.deleteMany(),
+    prisma.product.deleteMany()
+  ]);
 
-  dataStore.applications = [];
-  dataStore.members = [];
-  dataStore.payouts = [];
-  if (dataStore.products && Array.isArray(dataStore.products)) {
-    dataStore.products.forEach(p => deleteProductPhotos(p));
-  }
-  dataStore.products = [];
-  dataStore.inquiries = [];
-  dataStore.categories = [];
-  dataStore.orders = [];
-  dataStore.wallets = [];
-  dataStore.withdrawals = [];
-  dataStore.notifications = [];
-
-
-  // Initialize fresh logs array with the factory reset action logged
-  const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const timestamp = `${dateStr} ${timeStr}`;
-
-  dataStore.logs = [{
-    id: `log_${Date.now()}`,
-    timestamp,
-    action: 'Factory Reset Executed',
-    ipAddress: 'Internal System Process',
-    status: 'Success'
-  }];
-
-  saveDataStoreToFile(dataStore);
-  return true;
-}
-
-export function importDataStore(newData) {
-  if (!newData || typeof newData !== 'object') {
-    throw new Error('Invalid data format: Expected a JSON object.');
-  }
-
-  // Basic validation to check that the uploaded object is a valid plan10 database
-  if (!newData.users || !Array.isArray(newData.users)) {
-    throw new Error('Invalid backup file: Missing or invalid "users" array.');
-  }
-
-  // Ensure there is at least one ADMIN user to prevent accidental lockout
-  const hasAdmin = newData.users.some(u => u.role === 'ADMIN');
-  if (!hasAdmin) {
-    throw new Error('Invalid backup file: Must contain at least one ADMIN user to prevent system lockout.');
-  }
-
-  // Mutate dataStore keys in-place
-  dataStore.users = newData.users;
-  dataStore.applications = newData.applications || [];
-  dataStore.members = newData.members || [];
-  dataStore.payouts = newData.payouts || [];
-  dataStore.products = newData.products || [];
-  dataStore.inquiries = newData.inquiries || [];
-  dataStore.categories = newData.categories || [];
-  dataStore.orders = newData.orders || [];
-  dataStore.wallets = newData.wallets || [];
-  dataStore.withdrawals = newData.withdrawals || [];
-  dataStore.notifications = newData.notifications || [];
-
-  // Restore existing logs or initialize
-  dataStore.logs = newData.logs || [];
-  
-  // Log the restore event itself
-  const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const timestamp = `${dateStr} ${timeStr}`;
-
-  if (!Array.isArray(dataStore.logs)) {
-    dataStore.logs = [];
-  }
-
-  dataStore.logs.unshift({
-    id: `log_${Date.now()}`,
-    timestamp,
-    action: 'Database Restored from JSON Backup',
-    ipAddress: 'Internal System Process',
-    status: 'Success'
-  });
-
-  if (dataStore.logs.length > 30) {
-    dataStore.logs = dataStore.logs.slice(0, 30);
-  }
-
-  saveDataStoreToFile(dataStore);
-  return true;
-}
-
-// System Logging Helper Functions
-export function addSystemLog(action, ipAddress = 'Internal System Process', status = 'Success') {
-  if (!dataStore.logs) {
-    dataStore.logs = [];
-  }
-
-  const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const timestamp = `${dateStr} ${timeStr}`;
-
-  dataStore.logs.unshift({
-    id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    timestamp,
-    action,
-    ipAddress,
-    status
-  });
-
-  // Keep only the last 30 logs to avoid file bloat
-  if (dataStore.logs.length > 30) {
-    dataStore.logs = dataStore.logs.slice(0, 30);
-  }
-
-  saveDataStoreToFile(dataStore);
-}
-
-export function getSystemLogs() {
-  return dataStore.logs || [];
-}
-
-export function getOrders() {
-  if (!dataStore.orders) {
-    dataStore.orders = [];
-  }
-  return dataStore.orders;
-}
-
-export function addOrder(orderData) {
-  if (!dataStore.orders) {
-    dataStore.orders = [];
-  }
-  const newOrder = {
-    id: `ORD_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    username: orderData.username,
-    productId: Number(orderData.productId),
-    productName: orderData.productName,
-    price: Number(orderData.price),
-    status: 'PENDING',
-    orderedAt: new Date().toISOString()
-  };
-  dataStore.orders.unshift(newOrder);
-  
-  // Add a notification about the new order placement
-  addNotification(
-    newOrder.username,
-    `Your order ${newOrder.id} for "${newOrder.productName}" (৳${Math.round(newOrder.price).toLocaleString()} BDT) has been placed successfully and is pending admin review.`,
-    'ORDER'
-  );
-
-  saveDataStoreToFile(dataStore);
-  return newOrder;
-}
-
-export function updateOrderStatus(orderId, status) {
-  if (!dataStore.orders) {
-    dataStore.orders = [];
-  }
-  const order = dataStore.orders.find(o => o.id === orderId);
-  if (order) {
-    order.status = status;
-    
-    // Send a notification alert to the user
-    let msg = `Order ${order.id} status updated to ${status}.`;
-    if (status === 'PROCESSING') {
-      msg = `Great news! Your order ${order.id} for "${order.productName}" is now in processing.`;
-    } else if (status === 'DELIVERED') {
-      msg = `Success! Your order ${order.id} for "${order.productName}" has been delivered.`;
-    } else if (status === 'REJECTED') {
-      msg = `Notice: Your order ${order.id} for "${order.productName}" was rejected.`;
-    } else if (status === 'PENDING') {
-      msg = `Your order ${order.id} for "${order.productName}" is pending admin review.`;
+  await prisma.user.create({
+    data: {
+      id: 'usr_admin',
+      username: 'admin',
+      password: hashPassword('admin'),
+      name: 'Corporate Executive Admin',
+      email: 'admin@plan10bd.com',
+      role: 'ADMIN',
+      createdAt: new Date()
     }
-    addNotification(order.username, msg, 'ORDER');
-    
-    // Automatically approve/reject first-time buyer accounts upon order action
-    if (status === 'PROCESSING' || status === 'DELIVERED') {
-      const app = dataStore.applications.find(a => a.phone === order.username && a.status === 'PENDING');
-      if (app) {
-        updateApplicationStatus(app.id, 'APPROVED');
-      } else {
-        const member = dataStore.members.find(m => m.phone === order.username || m.memberId === order.username);
-        if (member) {
-          addToBinaryTree('buyer', member.memberId);
+  });
+
+  await addSystemLog('Factory Reset Executed', 'Internal System Process', 'Success');
+}
+
+export async function importDataStore(newData) {
+  await resetDataStore();
+
+  // Re-seed all tables using newData properties
+  if (newData.users) {
+    for (const u of newData.users) {
+      if (u.username === 'admin') continue;
+      await prisma.user.create({
+        data: {
+          id: u.id || `usr_${Date.now()}`,
+          username: u.username,
+          password: needsRehash(u.password) ? hashPassword(u.password) : u.password,
+          name: u.name,
+          email: u.email || '',
+          role: u.role || 'USER',
+          phone: u.phone || null,
+          createdAt: u.createdAt ? new Date(u.createdAt) : new Date()
+        }
+      });
+    }
+  }
+
+  if (newData.applications) {
+    for (const a of newData.applications) {
+      await prisma.application.create({
+        data: {
+          id: a.id,
+          applicantName: a.applicantName,
+          phone: a.phone,
+          nid: a.nid,
+          password: needsRehash(a.password) ? hashPassword(a.password) : a.password,
+          email: a.email || null,
+          capitalAmount: a.capitalAmount ? Number(a.capitalAmount) : null,
+          durationMonths: a.durationMonths ? Number(a.durationMonths) : null,
+          purpose: a.purpose,
+          nomineeName: a.nomineeName || null,
+          relation: a.relation || null,
+          fatherName: a.fatherName || null,
+          address: a.address || null,
+          status: a.status || 'PENDING',
+          submittedAt: a.submittedAt ? new Date(a.submittedAt) : new Date(),
+          referredBy: a.referredBy || null
+        }
+      });
+    }
+  }
+
+  if (newData.members) {
+    for (const m of newData.members) {
+      await prisma.member.create({
+        data: {
+          memberId: m.memberId,
+          name: m.name,
+          phone: m.phone,
+          nid: m.nid,
+          capitalInvested: Number(m.capitalInvested) || 0,
+          termMonths: Number(m.termMonths) || 0,
+          monthlyProfit: Number(m.monthlyProfit) || 0,
+          monthlyCapitalRefund: Number(m.monthlyCapitalRefund) || 0,
+          monthlyTotalPayout: Number(m.monthlyTotalPayout) || 0,
+          joinDate: m.joinDate,
+          status: m.status || 'ACTIVE',
+          nomineeName: m.nomineeName || null,
+          relation: m.relation || null,
+          fatherName: m.fatherName || null,
+          address: m.address || null,
+          referredBy: m.referredBy || null,
+          buyerReferredBy: m.buyerReferredBy || null,
+          buyerParent: m.buyerParent || null,
+          buyerLeft: m.buyerLeft || null,
+          buyerRight: m.buyerRight || null,
+          investorParent: m.investorParent || null,
+          investorLeft: m.investorLeft || null,
+          investorRight: m.investorRight || null
+        }
+      });
+    }
+  }
+
+  if (newData.payouts) {
+    for (const p of newData.payouts) {
+      await prisma.payout.create({
+        data: {
+          id: p.id,
+          memberId: p.memberId,
+          memberName: p.memberName,
+          monthNumber: Number(p.monthNumber),
+          dueDate: p.dueDate,
+          profitAmount: Number(p.profitAmount) || 0,
+          capitalRefund: Number(p.capitalRefund) || 0,
+          totalPayout: Number(p.totalPayout) || 0,
+          status: p.status || 'PENDING',
+          method: p.method || 'Bank Wire / bKash',
+          createdAt: p.createdAt ? new Date(p.createdAt) : new Date()
+        }
+      });
+    }
+  }
+
+  if (newData.products) {
+    for (const p of newData.products) {
+      const urls = p.imageUrls || (p.imageUrl ? [p.imageUrl] : []);
+      await prisma.product.create({
+        data: {
+          id: p.id,
+          name: p.name,
+          brand: p.brand || 'PLAN-10',
+          category: p.category || 'Consumer Goods',
+          price: Number(p.price) || 0,
+          description: p.description || '',
+          imageUrl: urls[0] || '',
+          imageUrls: JSON.stringify(urls),
+          stockStatus: p.stockStatus || 'IN_STOCK'
+        }
+      });
+    }
+  }
+
+  if (newData.inquiries) {
+    for (const inq of newData.inquiries) {
+      await prisma.inquiry.create({
+        data: {
+          id: inq.id,
+          name: inq.name,
+          phone: inq.phone,
+          message: inq.message,
+          date: inq.date ? new Date(inq.date) : new Date(),
+          status: inq.status || 'UNREAD'
+        }
+      });
+    }
+  }
+
+  if (newData.categories) {
+    for (const cat of newData.categories) {
+      await prisma.category.create({ data: { name: cat } });
+    }
+  }
+
+  if (newData.orders) {
+    for (const o of newData.orders) {
+      await prisma.order.create({
+        data: {
+          id: o.id,
+          username: o.username,
+          productId: Number(o.productId),
+          productName: o.productName,
+          price: Number(o.price) || 0,
+          status: o.status || 'PENDING',
+          createdAt: o.createdAt ? new Date(o.createdAt) : new Date()
+        }
+      });
+    }
+  }
+
+  if (newData.wallets) {
+    for (const w of newData.wallets) {
+      await prisma.wallet.create({
+        data: {
+          username: w.username,
+          balance: Number(w.balance) || 0
+        }
+      });
+      if (w.transactions) {
+        for (const txn of w.transactions) {
+          await prisma.transaction.create({
+            data: {
+              id: txn.id,
+              username: w.username,
+              amount: Number(txn.amount) || 0,
+              type: txn.type,
+              description: txn.description,
+              date: txn.date ? new Date(txn.date) : new Date()
+            }
+          });
         }
       }
     }
-    
-    if (status === 'REJECTED') {
-      const app = dataStore.applications.find(a => a.phone === order.username && a.status === 'PENDING');
-      if (app) {
-        updateApplicationStatus(app.id, 'REJECTED');
-      }
-    }
-    
-    saveDataStoreToFile(dataStore);
   }
-  return order;
+
+  if (newData.notifications) {
+    for (const n of newData.notifications) {
+      await prisma.notification.create({
+        data: {
+          id: n.id,
+          username: n.username,
+          message: n.message,
+          type: n.type || 'SYSTEM',
+          timestamp: n.timestamp ? new Date(n.timestamp) : new Date(),
+          isRead: Boolean(n.isRead)
+        }
+      });
+    }
+  }
 }
 
-export function getWallet(username) {
-  if (!dataStore.wallets) {
-    dataStore.wallets = [];
-  }
+export async function addSystemLog(action, ipAddress = 'Internal System Process', status = 'Success') {
+  return prisma.systemLog.create({
+    data: {
+      action,
+      operator: ipAddress || 'Internal System Process',
+      status,
+      timestamp: new Date()
+    }
+  });
+}
+
+export async function getSystemLogs() {
+  return prisma.systemLog.findMany({ orderBy: { timestamp: 'desc' } });
+}
+
+export async function getOrders() {
+  return prisma.order.findMany({ orderBy: { createdAt: 'desc' } });
+}
+
+export async function addOrder(orderData) {
+  const nextNum = (await prisma.order.count()) + 1;
+  const padding = nextNum < 10 ? '00' : (nextNum < 100 ? '0' : '');
+  const id = `ORD-2026-${padding}${nextNum}`;
+
+  return prisma.order.create({
+    data: {
+      id,
+      username: orderData.username,
+      productId: Number(orderData.productId),
+      productName: orderData.productName,
+      price: Number(orderData.price) || 0,
+      status: 'PENDING',
+      createdAt: new Date()
+    }
+  });
+}
+
+export async function updateOrderStatus(orderId, status) {
+  const exists = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!exists) return null;
+
+  return prisma.order.update({
+    where: { id: orderId },
+    data: { status }
+  });
+}
+
+export async function getWallet(username) {
   const cleanId = username ? username.trim().toLowerCase() : '';
-  const member = dataStore.members.find(m => 
-    (m.memberId && m.memberId.toLowerCase() === cleanId) || 
-    (m.phone && m.phone.trim().toLowerCase() === cleanId)
-  );
-  
+  const member = await findMemberRecord(cleanId);
   const primaryId = member ? member.memberId : username;
-  let wallet = dataStore.wallets.find(w => w.username === primaryId);
+
+  let wallet = await prisma.wallet.findUnique({
+    where: { username: primaryId },
+    include: { transactions: true }
+  });
   
   if (!wallet) {
     if (member && member.phone) {
-      wallet = dataStore.wallets.find(w => w.username === member.phone);
+      wallet = await prisma.wallet.findUnique({
+        where: { username: member.phone },
+        include: { transactions: true }
+      });
       if (wallet) {
-        wallet.username = primaryId;
-        saveDataStoreToFile(dataStore);
-        return wallet;
+        const updated = await prisma.wallet.update({
+          where: { username: member.phone },
+          data: { username: primaryId }
+        });
+        return {
+          ...updated,
+          transactions: wallet.transactions
+        };
       }
     }
 
-    wallet = {
-      username: primaryId,
-      balance: 0,
-      transactions: []
-    };
-    dataStore.wallets.push(wallet);
-    saveDataStoreToFile(dataStore);
+    wallet = await prisma.wallet.create({
+      data: {
+        username: primaryId,
+        balance: 0
+      },
+      include: { transactions: true }
+    });
   }
+
+  // Sort transactions in descending order of date/id
+  if (wallet.transactions) {
+    wallet.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
   return wallet;
 }
 
-export function updateWalletBalance(username, amount, type, description) {
-  const wallet = getWallet(username);
-  wallet.balance += Number(amount);
-  if (!wallet.transactions) wallet.transactions = [];
-  wallet.transactions.push({
-    id: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    amount: Number(amount),
-    type,
-    description,
-    date: new Date().toISOString()
+export async function updateWalletBalance(username, amount, type, description) {
+  const wallet = await getWallet(username);
+  const newBalance = wallet.balance + Number(amount);
+
+  const updatedWallet = await prisma.wallet.update({
+    where: { username: wallet.username },
+    data: {
+      balance: newBalance
+    }
   });
-  saveDataStoreToFile(dataStore);
+
+  const txnId = `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  await prisma.transaction.create({
+    data: {
+      id: txnId,
+      username: wallet.username,
+      amount: Number(amount),
+      type,
+      description,
+      date: new Date()
+    }
+  });
   
-  addNotification(username, `Wallet updated: ${amount > 0 ? '+' : ''}৳${amount} - ${description}`, 'WALLET');
-  return wallet;
-}
-
-export function addNotification(username, message, type = 'SYSTEM') {
-  if (!dataStore.notifications) {
-    dataStore.notifications = [];
-  }
-  const newNotif = {
-    id: `NTF_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    username,
-    message,
-    type,
-    timestamp: new Date().toISOString(),
-    isRead: false
+  await addNotification(username, `Wallet updated: ${amount > 0 ? '+' : ''}৳${amount} - ${description}`, 'WALLET');
+  return {
+    ...updatedWallet,
+    transactions: [
+      { id: txnId, amount: Number(amount), type, description, date: new Date() },
+      ...(wallet.transactions || [])
+    ]
   };
-  dataStore.notifications.unshift(newNotif);
-  saveDataStoreToFile(dataStore);
-  return newNotif;
 }
 
-export function getNotifications(username) {
-  if (!dataStore.notifications) {
-    dataStore.notifications = [];
-  }
+export async function addNotification(username, message, type = 'SYSTEM') {
+  const id = `NTF_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  return prisma.notification.create({
+    data: {
+      id,
+      username,
+      message,
+      type,
+      timestamp: new Date(),
+      isRead: false
+    }
+  });
+}
+
+export async function getNotifications(username) {
   const cleanId = username ? username.trim().toLowerCase() : '';
-  const member = dataStore.members.find(m => 
-    (m.memberId && m.memberId.toLowerCase() === cleanId) || 
-    (m.phone && m.phone.trim().toLowerCase() === cleanId)
-  );
+  const member = await findMemberRecord(cleanId);
 
   const ids = [username.trim().toLowerCase()];
   if (member) {
@@ -1369,67 +1477,68 @@ export function getNotifications(username) {
 
   const digits = username.replace(/\D/g, '');
 
-  return dataStore.notifications.filter(n => {
+  const notifs = await prisma.notification.findMany({
+    orderBy: { timestamp: 'desc' }
+  });
+
+  return notifs.filter(n => {
     if (!n.username) return false;
     const nClean = n.username.trim().toLowerCase();
     if (ids.includes(nClean)) return true;
     
     const nDigits = n.username.replace(/\D/g, '');
-    if (digits.length >= 6 && nDigits.length >= 6) {
+    if (digits.length >= 10 && nDigits.length >= 10) {
       return digits === nDigits || digits.endsWith(nDigits) || nDigits.endsWith(digits);
     }
     return false;
   });
 }
 
-export function addWithdrawalRequest(username, amount, method, paymentNumber) {
-  const wallet = getWallet(username);
+export async function addWithdrawalRequest(username, amount, method, paymentNumber) {
+  const wallet = await getWallet(username);
   if (wallet.balance < amount) {
     return { success: false, message: 'Insufficient wallet balance.' };
   }
 
-  wallet.balance -= Number(amount);
-  if (!wallet.transactions) wallet.transactions = [];
-  wallet.transactions.push({
-    id: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    amount: -Number(amount),
-    type: 'WITHDRAW',
-    description: `Withdrawal request submitted (${method} - ${paymentNumber || ''})`,
-    date: new Date().toISOString()
+  await prisma.wallet.update({
+    where: { username: wallet.username },
+    data: { balance: wallet.balance - Number(amount) }
   });
 
-  if (!dataStore.withdrawals) {
-    dataStore.withdrawals = [];
-  }
+  const txnId = `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  await prisma.transaction.create({
+    data: {
+      id: txnId,
+      username: wallet.username,
+      amount: -Number(amount),
+      type: 'WITHDRAW',
+      description: `Withdrawal request submitted (${method} - ${paymentNumber || ''})`,
+      date: new Date()
+    }
+  });
 
-  const newRequest = {
-    id: `WTH_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    username,
-    amount: Number(amount),
-    method,
-    paymentNumber: paymentNumber || '',
-    status: 'PENDING',
-    requestedAt: new Date().toISOString(),
-    processedAt: null
-  };
+  const wthId = `WTH_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  const newRequest = await prisma.withdrawal.create({
+    data: {
+      id: wthId,
+      username,
+      amount: Number(amount),
+      method,
+      paymentNumber: paymentNumber || '',
+      status: 'PENDING',
+      requestedAt: new Date(),
+      processedAt: null
+    }
+  });
 
-  dataStore.withdrawals.unshift(newRequest);
-  saveDataStoreToFile(dataStore);
-
-  addNotification(username, `Withdrawal request of ৳${amount} BDT (${method} to ${paymentNumber || ''}) submitted.`, 'WALLET');
+  await addNotification(username, `Withdrawal request of ৳${amount} BDT (${method} to ${paymentNumber || ''}) submitted.`, 'WALLET');
   return { success: true, request: newRequest };
 }
 
-export function getWithdrawals(username = null) {
-  if (!dataStore.withdrawals) {
-    dataStore.withdrawals = [];
-  }
+export async function getWithdrawals(username = null) {
   if (username) {
     const cleanId = username.trim().toLowerCase();
-    const member = dataStore.members.find(m => 
-      (m.memberId && m.memberId.toLowerCase() === cleanId) || 
-      (m.phone && m.phone.trim().toLowerCase() === cleanId)
-    );
+    const member = await findMemberRecord(cleanId);
 
     const ids = [cleanId];
     if (member) {
@@ -1439,92 +1548,113 @@ export function getWithdrawals(username = null) {
 
     const digits = username.replace(/\D/g, '');
 
-    return dataStore.withdrawals.filter(w => {
+    const list = await prisma.withdrawal.findMany({ orderBy: { requestedAt: 'desc' } });
+    return list.filter(w => {
       if (!w.username) return false;
       const wClean = w.username.trim().toLowerCase();
       if (ids.includes(wClean)) return true;
 
       const wDigits = w.username.replace(/\D/g, '');
-      if (digits.length >= 6 && wDigits.length >= 6) {
+      if (digits.length >= 10 && wDigits.length >= 10) {
         return digits === wDigits || digits.endsWith(wDigits) || wDigits.endsWith(digits);
       }
       return false;
     });
   }
-  return dataStore.withdrawals;
+
+  return prisma.withdrawal.findMany({ orderBy: { requestedAt: 'desc' } });
 }
 
-export function updateWithdrawalStatus(requestId, status) {
-  if (!dataStore.withdrawals) {
-    dataStore.withdrawals = [];
-  }
-  const req = dataStore.withdrawals.find(w => w.id === requestId);
+export async function updateWithdrawalStatus(requestId, status) {
+  const req = await prisma.withdrawal.findUnique({ where: { id: requestId } });
   if (!req) return { success: false, message: 'Withdrawal request not found.' };
   if (req.status !== 'PENDING') {
     return { success: false, message: 'Withdrawal request already processed.' };
   }
 
-  req.status = status;
-  req.processedAt = new Date().toISOString();
+  const updatedReq = await prisma.withdrawal.update({
+    where: { id: requestId },
+    data: {
+      status,
+      processedAt: new Date()
+    }
+  });
 
   if (status === 'REJECTED') {
-    const wallet = getWallet(req.username);
-    wallet.balance += req.amount;
-    if (!wallet.transactions) wallet.transactions = [];
-    wallet.transactions.push({
-      id: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      amount: req.amount,
-      type: 'DEPOSIT',
-      description: `Refund for rejected withdrawal request #${req.id}`,
-      date: new Date().toISOString()
+    const wallet = await getWallet(req.username);
+    await prisma.wallet.update({
+      where: { username: wallet.username },
+      data: { balance: wallet.balance + req.amount }
     });
-    addNotification(req.username, `Withdrawal request of ৳${req.amount} BDT was rejected. Wallet refunded.`, 'WALLET');
+
+    const txnId = `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    await prisma.transaction.create({
+      data: {
+        id: txnId,
+        username: wallet.username,
+        amount: req.amount,
+        type: 'DEPOSIT',
+        description: `Refund for rejected withdrawal request #${req.id}`,
+        date: new Date()
+      }
+    });
+    await addNotification(req.username, `Withdrawal request of ৳${req.amount} BDT was rejected. Wallet refunded.`, 'WALLET');
   } else if (status === 'APPROVED') {
-    addNotification(req.username, `Withdrawal request of ৳${req.amount} BDT was approved.`, 'WALLET');
+    await addNotification(req.username, `Withdrawal request of ৳${req.amount} BDT was approved.`, 'WALLET');
   }
 
-  saveDataStoreToFile(dataStore);
-  return { success: true, request: req };
+  return { success: true, request: updatedReq };
 }
 
-export function addToBinaryTree(treeType, memberId) {
+export async function addToBinaryTree(treeType, memberId) {
   const parentKey = treeType === 'buyer' ? 'buyerParent' : 'investorParent';
   const leftKey = treeType === 'buyer' ? 'buyerLeft' : 'investorLeft';
   const rightKey = treeType === 'buyer' ? 'buyerRight' : 'investorRight';
 
-  const member = dataStore.members.find(m => m.memberId === memberId);
+  const member = await prisma.member.findUnique({ where: { memberId } });
   if (!member) return;
 
-  if (member[parentKey] !== undefined) {
+  if (member[parentKey] !== null && member[parentKey] !== undefined) {
     return;
   }
 
-  const treeMembers = dataStore.members.filter(m => m[parentKey] !== undefined);
+  const allMembers = await prisma.member.findMany();
+  const treeMembers = allMembers.filter(m => m[parentKey] !== null && m[parentKey] !== undefined);
 
   if (treeMembers.length === 0) {
-    const plan101 = dataStore.members.find(m => m.memberId === 'Plan10-101');
+    const plan101 = allMembers.find(m => m.memberId === 'Plan10-101');
     if (plan101 && plan101.memberId !== memberId) {
-      plan101[parentKey] = null;
-      plan101[leftKey] = null;
-      plan101[rightKey] = null;
-      saveDataStoreToFile(dataStore);
-      addToBinaryTree(treeType, memberId);
+      await prisma.member.update({
+        where: { memberId: plan101.memberId },
+        data: {
+          [parentKey]: null,
+          [leftKey]: null,
+          [rightKey]: null
+        }
+      });
+      await addToBinaryTree(treeType, memberId);
       return;
     } else {
-      member[parentKey] = null;
-      member[leftKey] = null;
-      member[rightKey] = null;
-      saveDataStoreToFile(dataStore);
-      addNotification(member.phone || member.memberId, `Placed at root of ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      await prisma.member.update({
+        where: { memberId },
+        data: {
+          [parentKey]: null,
+          [leftKey]: null,
+          [rightKey]: null
+        }
+      });
+      await addNotification(member.phone || member.memberId, `Placed at root of ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
       return;
     }
   }
 
   const root = treeMembers.find(m => m[parentKey] === null);
   if (!root) {
-    treeMembers[0][parentKey] = null;
-    saveDataStoreToFile(dataStore);
-    addToBinaryTree(treeType, memberId);
+    await prisma.member.update({
+      where: { memberId: treeMembers[0].memberId },
+      data: { [parentKey]: null }
+    });
+    await addToBinaryTree(treeType, memberId);
     return;
   }
 
@@ -1533,45 +1663,59 @@ export function addToBinaryTree(treeType, memberId) {
     const current = queue.shift();
 
     if (!current[leftKey]) {
-      current[leftKey] = memberId;
-      member[parentKey] = current.memberId;
-      member[leftKey] = null;
-      member[rightKey] = null;
-      saveDataStoreToFile(dataStore);
-      addNotification(member.phone || member.memberId, `Placed under ${current.name} (Left) in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
-      addNotification(current.phone || current.memberId, `${member.name} joined Left under you in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      await prisma.member.update({
+        where: { memberId: current.memberId },
+        data: { [leftKey]: memberId }
+      });
+      await prisma.member.update({
+        where: { memberId },
+        data: {
+          [parentKey]: current.memberId,
+          [leftKey]: null,
+          [rightKey]: null
+        }
+      });
+      await addNotification(member.phone || member.memberId, `Placed under ${current.name} (Left) in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      await addNotification(current.phone || current.memberId, `${member.name} joined Left under you in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
       return;
     } else {
-      const leftChild = dataStore.members.find(m => m.memberId === current[leftKey]);
+      const leftChild = allMembers.find(m => m.memberId === current[leftKey]);
       if (leftChild) queue.push(leftChild);
     }
 
     if (!current[rightKey]) {
-      current[rightKey] = memberId;
-      member[parentKey] = current.memberId;
-      member[leftKey] = null;
-      member[rightKey] = null;
-      saveDataStoreToFile(dataStore);
-      addNotification(member.phone || member.memberId, `Placed under ${current.name} (Right) in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
-      addNotification(current.phone || current.memberId, `${member.name} joined Right under you in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      await prisma.member.update({
+        where: { memberId: current.memberId },
+        data: { [rightKey]: memberId }
+      });
+      await prisma.member.update({
+        where: { memberId },
+        data: {
+          [parentKey]: current.memberId,
+          [leftKey]: null,
+          [rightKey]: null
+        }
+      });
+      await addNotification(member.phone || member.memberId, `Placed under ${current.name} (Right) in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
+      await addNotification(current.phone || current.memberId, `${member.name} joined Right under you in ${treeType === 'buyer' ? 'Buyer' : 'Investor'} Tree.`, treeType === 'buyer' ? 'ORDER' : 'INVESTMENT');
       return;
     } else {
-      const rightChild = dataStore.members.find(m => m.memberId === current[rightKey]);
+      const rightChild = allMembers.find(m => m.memberId === current[rightKey]);
       if (rightChild) queue.push(rightChild);
     }
   }
 }
 
-export function buildBinaryTreeUI(memberId, treeType, depth = 1) {
+export async function buildBinaryTreeUI(memberId, treeType, depth = 1) {
   if (!memberId || depth > 4) return null;
-  const m = dataStore.members.find(x => x.memberId === memberId);
+  const m = await prisma.member.findUnique({ where: { memberId } });
   if (!m) return null;
 
   const leftKey = treeType === 'buyer' ? 'buyerLeft' : 'investorLeft';
   const rightKey = treeType === 'buyer' ? 'buyerRight' : 'investorRight';
 
-  const leftNode = m[leftKey] ? buildBinaryTreeUI(m[leftKey], treeType, depth + 1) : null;
-  const rightNode = m[rightKey] ? buildBinaryTreeUI(m[rightKey], treeType, depth + 1) : null;
+  const leftNode = m[leftKey] ? await buildBinaryTreeUI(m[leftKey], treeType, depth + 1) : null;
+  const rightNode = m[rightKey] ? await buildBinaryTreeUI(m[rightKey], treeType, depth + 1) : null;
 
   return {
     memberId: m.memberId,
@@ -1581,4 +1725,3 @@ export function buildBinaryTreeUI(memberId, treeType, depth = 1) {
     right: rightNode
   };
 }
-

@@ -42,7 +42,7 @@ export async function POST(request) {
       }
     }
 
-    const result = bindReferralCode(identifier, referralCode, type || 'investor');
+    const result = await bindReferralCode(identifier, referralCode, type || 'investor');
 
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });

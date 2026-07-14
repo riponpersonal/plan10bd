@@ -6,7 +6,7 @@ import { validateProduct, sanitizeObject } from '@/app/lib/validate';
 
 export async function GET() {
   try {
-    const products = getProducts();
+    const products = await getProducts();
     return NextResponse.json({ success: true, products });
   } catch (err) {
     return NextResponse.json({ success: false, message: 'Failed to fetch products.' }, { status: 500 });
@@ -28,7 +28,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: validation.errors.join(' ') }, { status: 400 });
     }
 
-    const newProduct = addProduct(body);
+    const newProduct = await addProduct(body);
     return NextResponse.json({ success: true, product: newProduct });
   } catch (err) {
     return NextResponse.json({ success: false, message: 'Failed to add product.' }, { status: 500 });
@@ -48,7 +48,7 @@ export async function PUT(request) {
     }
     const rawBody = await request.json();
     const body = sanitizeObject(rawBody);
-    const updated = updateProduct(id, body);
+    const updated = await updateProduct(id, body);
     if (!updated) {
       return NextResponse.json({ success: false, message: 'Product not found.' }, { status: 404 });
     }
@@ -69,7 +69,7 @@ export async function DELETE(request) {
     if (!id) {
       return NextResponse.json({ success: false, message: 'Product ID is required.' }, { status: 400 });
     }
-    const deleted = deleteProduct(id);
+    const deleted = await deleteProduct(id);
     if (!deleted) {
       return NextResponse.json({ success: false, message: 'Product not found.' }, { status: 404 });
     }

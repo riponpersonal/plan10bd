@@ -1,29 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getDataStore, deleteMember } from '@/app/lib/dataStore';
 import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
-import { verifySessionToken, getSessionCookieName } from '@/app/lib/session';
+import { requireAdmin } from '@/app/lib/session';
 
-const COOKIE_NAME = getSessionCookieName();
-
-function checkAdminRole(request) {
-  const cookieHeader = request.headers.get('cookie') || '';
-  const cookies = Object.fromEntries(
-    cookieHeader.split(';').map((c) => {
-      const [k, ...v] = c.trim().split('=');
-      return [k.trim(), v.join('=')];
-    })
-  );
-  const token = cookies[COOKIE_NAME];
-  if (token) {
-    const { valid, payload } = verifySessionToken(token);
-    if (valid && payload?.role === 'ADMIN') return true;
+export async function GET(request) {
+  // ✅ SECURITY FIX: Require admin session (was completely public before!)
+  if (!requireAdmin(request)) {
+    return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
   }
-  // Fallback: legacy header
-  return request.headers.get('x-admin-role') === 'ADMIN';
-}
 
-export async function GET() {
-  const store = getDataStore();
+  const store = await getDataStore();
   
   // Classify each member dynamically
   const enrichedMembers = store.members.map(member => {
@@ -63,7 +49,8 @@ export async function GET() {
 export async function DELETE(request) {
   try {
     if (!validateOrigin(request)) return csrfDenied();
-    if (!checkAdminRole(request)) {
+    // ✅ SECURITY FIX: Require admin session
+    if (!requireAdmin(request)) {
       return NextResponse.json({ success: false, message: 'Unauthorized: Only admin can delete data.' }, { status: 403 });
     }
     const { searchParams } = new URL(request.url);
@@ -71,7 +58,7 @@ export async function DELETE(request) {
     if (!memberId) {
       return NextResponse.json({ success: false, message: 'Member ID is required.' }, { status: 400 });
     }
-    const deleted = deleteMember(memberId);
+    const deleted = await deleteMember(memberId);
     if (!deleted) {
       return NextResponse.json({ success: false, message: 'Member record not found.' }, { status: 404 });
     }

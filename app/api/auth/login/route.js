@@ -50,7 +50,7 @@ export async function POST(request) {
       );
     }
 
-    const user = findUserByCredentials(username, password);
+    const user = await findUserByCredentials(username, password);
 
     if (!user) {
       // Record failed attempt for rate limiting

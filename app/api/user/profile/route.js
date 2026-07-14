@@ -44,7 +44,7 @@ export async function POST(request) {
       }
     }
 
-    const updated = updateMemberProfile(identifier, {
+    const updated = await updateMemberProfile(identifier, {
       name,
       phone,
       nid,

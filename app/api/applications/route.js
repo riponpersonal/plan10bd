@@ -9,7 +9,7 @@ export async function GET(request) {
   if (!requireAdmin(request)) {
     return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
   }
-  const store = getDataStore();
+  const store = await getDataStore();
   return NextResponse.json({ success: true, applications: store.applications });
 }
 
@@ -31,7 +31,7 @@ export async function POST(request) {
       );
     }
 
-    const newApp = addApplication(body);
+    const newApp = await addApplication(body);
     return NextResponse.json({ success: true, application: newApp, message: 'Application submitted successfully.' });
   } catch (err) {
     return NextResponse.json({ success: false, message: err.message || 'Failed to submit application.' }, { status: 400 });
@@ -58,7 +58,7 @@ export async function PATCH(request) {
       return NextResponse.json({ success: false, message: 'Invalid status value.' }, { status: 400 });
     }
 
-    const updated = updateApplicationStatus(id, status);
+    const updated = await updateApplicationStatus(id, status);
     if (!updated) {
       return NextResponse.json({ success: false, message: 'Application not found.' }, { status: 404 });
     }
@@ -79,7 +79,7 @@ export async function DELETE(request) {
     if (!id) {
       return NextResponse.json({ success: false, message: 'Application ID is required.' }, { status: 400 });
     }
-    const deleted = deleteApplication(id);
+    const deleted = await deleteApplication(id);
     if (!deleted) {
       return NextResponse.json({ success: false, message: 'Application record not found.' }, { status: 404 });
     }
