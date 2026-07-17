@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 
 export default function AdminReferralsTreePage() {
@@ -298,7 +298,7 @@ export default function AdminReferralsTreePage() {
   const formatBDT = (amt) => '৳' + Math.round(Number(amt)).toLocaleString('en-IN');
 
   // Find upline sponsor path
-  const findUplineSponsors = (memberId) => {
+  const findUplineSponsors = useCallback((memberId) => {
     const path = [];
     let current = members.find(m => m.memberId === memberId);
     const seen = new Set();
@@ -314,7 +314,7 @@ export default function AdminReferralsTreePage() {
       }
     }
     return path;
-  };
+  }, [members]);
 
   // Find direct referrals for sidebar details
   const directReferralsList = useMemo(() => {
@@ -325,7 +325,7 @@ export default function AdminReferralsTreePage() {
   const uplinePath = useMemo(() => {
     if (!selectedMember) return [];
     return findUplineSponsors(selectedMember.memberId);
-  }, [selectedMember, members]);
+  }, [selectedMember, findUplineSponsors]);
 
   // Recursive renderer for nodes
   const renderTreeNodeHierarchy = (node, level = 0) => {

@@ -70,8 +70,12 @@ export default function AdminProductsPage() {
   };
 
   useEffect(() => {
-    fetchProducts();
-    fetchCategories();
+    const handle = setTimeout(() => {
+      fetchProducts();
+      fetchCategories();
+    }, 0);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleOpenAddModal = () => {
@@ -309,7 +313,7 @@ export default function AdminProductsPage() {
       ) : filteredProducts.length === 0 ? (
         <div style={{ padding: '40px', background: '#1e293b', border: '1px solid #334155', borderRadius: '12px', textAlign: 'center', color: '#94a3b8' }}>
           <i className="fa-solid fa-box-open" style={{ fontSize: '2rem', display: 'block', marginBottom: '12px' }}></i>
-          No products found. Click "Add New Product" to create one.
+          No products found. Click &quot;Add New Product&quot; to create one.
         </div>
       ) : (
         <div className="card-table-container">

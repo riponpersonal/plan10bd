@@ -40,14 +40,18 @@ export default function ProductCatalog({
           ) : (
             products.map((p, idx) => {
               let iconClass = "fa-cube";
-              if (p.category.includes("FMCG") || p.category.includes("Toiletries")) iconClass = "fa-soap";
-              else if (p.name.toLowerCase().includes("blender")) iconClass = "fa-blender";
-              else if (p.name.toLowerCase().includes("iron")) iconClass = "fa-shirt";
-              else if (p.name.toLowerCase().includes("cooker") || p.name.toLowerCase().includes("cooktop")) iconClass = "fa-fire-burner";
-              else if (p.name.toLowerCase().includes("fan")) iconClass = "fa-fan";
-              else if (p.name.toLowerCase().includes("water") || p.category.includes("Purifier")) iconClass = "fa-water";
+              const category = p.category || "";
+              const name = p.name || "";
+              
+              if (category.includes("FMCG") || category.includes("Toiletries")) iconClass = "fa-soap";
+              else if (name.toLowerCase().includes("blender")) iconClass = "fa-blender";
+              else if (name.toLowerCase().includes("iron")) iconClass = "fa-shirt";
+              else if (name.toLowerCase().includes("cooker") || name.toLowerCase().includes("cooktop")) iconClass = "fa-fire-burner";
+              else if (name.toLowerCase().includes("fan")) iconClass = "fa-fan";
+              else if (name.toLowerCase().includes("water") || category.includes("Purifier")) iconClass = "fa-water";
 
-              const urls = p.imageUrls && p.imageUrls.length > 0 ? p.imageUrls : (p.imageUrl ? [p.imageUrl] : []);
+              const rawUrls = Array.isArray(p.imageUrls) ? p.imageUrls : [];
+              const urls = rawUrls.length > 0 ? rawUrls : (p.imageUrl ? [p.imageUrl] : []);
               const activeIndex = activeImageIndexes[p.id] || 0;
               const hasMultiple = urls.length > 1;
 

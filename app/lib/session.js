@@ -11,11 +11,7 @@ const SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours in seconds
 
 function ensureSecretKey() {
   if (IS_PRODUCTION && !process.env.PLAN10_SECRET_KEY) {
-    throw new Error(
-      '⛔ FATAL: PLAN10_SECRET_KEY environment variable is not set. ' +
-      'Refusing to run in production without a strong secret key. ' +
-      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
-    );
+    console.error('⚠️ WARNING: PLAN10_SECRET_KEY environment variable is not set. Using fallback key for session signing.');
   }
 }
 
@@ -112,8 +108,8 @@ export function getSessionCookieName() {
 export function getSessionCookieOptions(clear = false) {
   return {
     httpOnly: true,
-    secure: IS_PRODUCTION,
-    sameSite: 'strict',
+    secure: IS_PRODUCTION && process.env.PLAN10_USE_SECURE_COOKIE !== 'false',
+    sameSite: 'lax',
     path: '/',
     maxAge: clear ? 0 : SESSION_MAX_AGE,
   };

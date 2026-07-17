@@ -141,6 +141,7 @@ export async function POST(request) {
 
     return response;
   } catch (error) {
+    console.error('[LOGIN ERROR]:', error);
     return NextResponse.json(
       { success: false, message: 'Server authentication error.' },
       { status: 500 }

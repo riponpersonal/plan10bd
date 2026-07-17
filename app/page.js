@@ -143,7 +143,10 @@ export default function Home() {
       const hash = window.location.hash || '';
       const params = new URLSearchParams(search || hash.substring(hash.indexOf('?')));
       if (params.get('ref')) {
-        setIsFormModalOpen(true);
+        const handle = setTimeout(() => {
+          setIsFormModalOpen(true);
+        }, 0);
+        return () => clearTimeout(handle);
       }
     }
   }, []);
@@ -214,7 +217,15 @@ export default function Home() {
     try {
       const savedUser = localStorage.getItem('plan10_user');
       if (savedUser) {
-        setCurrentUser(JSON.parse(savedUser));
+        const handle = setTimeout(() => {
+          try {
+            setCurrentUser(JSON.parse(savedUser));
+          } catch (parseErr) {
+            console.error('Failed to parse saved user:', parseErr);
+            localStorage.removeItem('plan10_user');
+          }
+        }, 0);
+        return () => clearTimeout(handle);
       }
     } catch (e) {
       console.error('Failed to restore session');
@@ -637,7 +648,7 @@ export default function Home() {
             <div className="about-card feature-box scroll-reveal delay-200">
               <div className="box-icon icon-green"><i className="fa-solid fa-eye"></i></div>
               <h3>Our Vision</h3>
-              <p>To become Bangladesh's most trusted multi-sector corporate enterprise, creating reliable jobs, transparent halal investments, and smart income opportunities for thousands of members nation-wide.</p>
+              <p>To become Bangladesh&apos;s most trusted multi-sector corporate enterprise, creating reliable jobs, transparent halal investments, and smart income opportunities for thousands of members nation-wide.</p>
             </div>
 
             <div className="about-card feature-box scroll-reveal delay-300">

@@ -1,0 +1,160 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../app/lib/prisma-client"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "rhel-openssl-1.1.x", "rhel-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  email     String
+  role      String
+  phone     String?
+  createdAt DateTime @default(now())
+}
+
+model Application {
+  id             String   @id
+  applicantName  String
+  phone          String
+  nid            String
+  password       String
+  email          String?
+  capitalAmount  Float?
+  durationMonths Int?
+  purpose        String
+  nomineeName    String?
+  relation       String?
+  fatherName     String?
+  address        String?
+  status         String   @default("PENDING")
+  submittedAt    DateTime @default(now())
+  referredBy     String?
+}
+
+model Member {
+  memberId             String  @id
+  name                 String
+  phone                String
+  nid                  String
+  capitalInvested      Float
+  termMonths           Int
+  monthlyProfit        Float
+  monthlyCapitalRefund Float
+  monthlyTotalPayout   Float
+  joinDate             String
+  status               String  @default("ACTIVE")
+  nomineeName          String?
+  relation             String?
+  fatherName           String?
+  address              String?
+  referredBy           String?
+  buyerReferredBy      String?
+  buyerParent          String?
+  buyerLeft            String?
+  buyerRight           String?
+  investorParent       String?
+  investorLeft         String?
+  investorRight        String?
+}
+
+model Payout {
+  id            String   @id
+  memberId      String
+  memberName    String
+  monthNumber   Int
+  dueDate       String
+  profitAmount  Float
+  capitalRefund Float
+  totalPayout   Float
+  status        String   @default("PENDING")
+  method        String   @default("Bank Wire / bKash")
+  createdAt     DateTime @default(now())
+}
+
+model Product {
+  id          Int    @id @default(autoincrement())
+  name        String
+  brand       String @default("PLAN-10")
+  category    String @default("Consumer Goods")
+  price       Float
+  description String
+  imageUrl    String @default("")
+  imageUrls   String @default("[]")
+  stockStatus String @default("IN_STOCK")
+}
+
+model Inquiry {
+  id      String   @id
+  name    String
+  phone   String
+  message String
+  date    DateTime @default(now())
+  status  String   @default("UNREAD")
+}
+
+model Category {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+}
+
+model SystemLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  operator  String?
+  status    String
+  timestamp DateTime @default(now())
+}
+
+model Order {
+  id          String   @id
+  username    String
+  productId   Int
+  productName String
+  price       Float
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+}
+
+model Wallet {
+  username     String        @id
+  balance      Float         @default(0)
+  transactions Transaction[]
+}
+
+model Transaction {
+  id          String   @id
+  username    String
+  amount      Float
+  type        String
+  description String
+  date        DateTime @default(now())
+  wallet      Wallet   @relation(fields: [username], references: [username], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id
+  username  String
+  message   String
+  type      String   @default("SYSTEM")
+  timestamp DateTime @default(now())
+  isRead    Boolean  @default(false)
+}
+
+model Withdrawal {
+  id            String    @id
+  username      String
+  amount        Float
+  method        String
+  paymentNumber String
+  status        String    @default("PENDING")
+  requestedAt   DateTime  @default(now())
+  processedAt   DateTime?
+}

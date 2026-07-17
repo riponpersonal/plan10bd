@@ -43,3 +43,7 @@ next-env.d.ts
 # sensitive data — never commit user data or uploaded files
 /data/
 /public/uploads/
+
+# deployment and log files
+deploy.zip
+*.log

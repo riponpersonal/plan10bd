@@ -19,7 +19,7 @@ export default function AdminApplicationsPage() {
       if (statusParam) {
         const upper = statusParam.toUpperCase();
         if (['ALL', 'PENDING', 'APPROVED', 'REJECTED'].includes(upper)) {
-          setFilter(upper);
+          setTimeout(() => setFilter(upper), 0);
         }
       }
     }

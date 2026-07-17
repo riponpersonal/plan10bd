@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../app/lib/prisma-client/index.js';
 import { hashPassword, needsRehash } from '../app/lib/crypto.js';
 
 const prisma = new PrismaClient();

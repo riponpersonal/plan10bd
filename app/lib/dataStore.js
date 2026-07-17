@@ -1,6 +1,6 @@
 // PLAN-10 BD Centralized Data Store & Prisma SQL Database Interface
 // Refactored to use SQL database instead of flat-file JSON datastore.
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from './prisma-client/index.js';
 import { hashPassword, verifyPassword, needsRehash } from './crypto.js';
 
 // Prevent multiple instances of Prisma Client in development hot reloading
@@ -69,16 +69,22 @@ export async function getDataStore() {
 
 async function findUserRecord(username) {
   if (!username) return null;
-  const inputClean = username.trim().toLowerCase();
+  const trimmed = username.trim();
   const inputDigits = username.replace(/\D/g, '');
 
   let user = await prisma.user.findFirst({
-    where: { username: { equals: inputClean } }
+    where: {
+      OR: [
+        { username: trimmed },
+        { username: trimmed.toLowerCase() },
+        { username: trimmed.toUpperCase() }
+      ]
+    }
   });
   if (user) return user;
 
   user = await prisma.user.findFirst({
-    where: { phone: { equals: username.trim() } }
+    where: { phone: trimmed }
   });
   if (user) return user;
 
@@ -98,16 +104,22 @@ async function findUserRecord(username) {
 
 async function findMemberRecord(memberIdOrPhone) {
   if (!memberIdOrPhone) return null;
-  const cleanId = memberIdOrPhone.trim().toLowerCase();
+  const trimmed = memberIdOrPhone.trim();
   const inputDigits = memberIdOrPhone.replace(/\D/g, '');
 
   let member = await prisma.member.findFirst({
-    where: { memberId: { equals: cleanId } }
+    where: {
+      OR: [
+        { memberId: trimmed },
+        { memberId: trimmed.toLowerCase() },
+        { memberId: trimmed.toUpperCase() }
+      ]
+    }
   });
   if (member) return member;
 
   member = await prisma.member.findFirst({
-    where: { phone: { equals: memberIdOrPhone.trim() } }
+    where: { phone: trimmed }
   });
   if (member) return member;
 
@@ -206,11 +218,14 @@ export async function findUserByCredentials(username, password) {
 
 export async function findUserById(idOrUsername) {
   if (!idOrUsername) return null;
+  const trimmed = idOrUsername.trim();
   return prisma.user.findFirst({
     where: {
       OR: [
-        { id: idOrUsername },
-        { username: idOrUsername }
+        { id: trimmed },
+        { username: trimmed },
+        { username: trimmed.toLowerCase() },
+        { username: trimmed.toUpperCase() }
       ]
     }
   });
@@ -576,8 +591,7 @@ export async function updateApplicationStatus(id, status) {
   });
 
   if (status === 'APPROVED') {
-    const memberCount = await prisma.member.count();
-    const memberId = `Plan10-${100 + memberCount + 1}`;
+    const memberId = await getNextMemberId();
     const monthlyProfit = app.capitalAmount ? (app.capitalAmount / 100000) * 3000 : 0;
     const monthlyCapitalRefund = app.durationMonths ? Math.round((app.capitalAmount || 0) / app.durationMonths) : 0;
     
@@ -780,6 +794,10 @@ export async function deleteApplication(id) {
 export async function deleteMember(memberId) {
   const m = await prisma.member.findUnique({ where: { memberId } });
   if (!m) return null;
+  
+  // Also delete corresponding user account to prevent orphaned records & ID collisions
+  await prisma.user.deleteMany({ where: { username: memberId } });
+
   await prisma.member.delete({ where: { memberId } });
   return m;
 }
@@ -988,12 +1006,38 @@ export async function bindReferralCode(memberIdentifier, referrerCode, type = 'i
   };
 }
 
+export function parseProductJSON(p) {
+  if (!p) return p;
+  let parsedUrls = [];
+  try {
+    if (p.imageUrls) {
+      parsedUrls = JSON.parse(p.imageUrls);
+      if (typeof parsedUrls === 'string') {
+        parsedUrls = JSON.parse(parsedUrls);
+      }
+    }
+  } catch {
+    parsedUrls = [];
+  }
+  if (!Array.isArray(parsedUrls)) {
+    parsedUrls = [];
+  }
+  
+  let cleanImageUrl = p.imageUrl;
+  if (!cleanImageUrl || cleanImageUrl === '[' || cleanImageUrl === '""') {
+    cleanImageUrl = parsedUrls[0] || '';
+  }
+  
+  return {
+    ...p,
+    imageUrl: cleanImageUrl,
+    imageUrls: parsedUrls
+  };
+}
+
 export async function getProducts() {
   const list = await prisma.product.findMany();
-  return list.map(p => ({
-    ...p,
-    imageUrls: JSON.parse(p.imageUrls || '[]')
-  }));
+  return list.map(parseProductJSON);
 }
 
 export async function addProduct(productData) {
@@ -1040,10 +1084,7 @@ export async function updateProduct(id, productData) {
     data: dataUpdate
   });
 
-  return {
-    ...updated,
-    imageUrls: JSON.parse(updated.imageUrls || '[]')
-  };
+  return parseProductJSON(updated);
 }
 
 async function deleteProductPhotos(product) {
@@ -1076,10 +1117,7 @@ export async function deleteProduct(id) {
 
   await deleteProductPhotos(p);
   await prisma.product.delete({ where: { id: numericId } });
-  return {
-    ...p,
-    imageUrls: JSON.parse(p.imageUrls || '[]')
-  };
+  return parseProductJSON(p);
 }
 
 export async function getCategories() {
@@ -1619,7 +1657,7 @@ export async function addToBinaryTree(treeType, memberId) {
   }
 
   const allMembers = await prisma.member.findMany();
-  const treeMembers = allMembers.filter(m => m[parentKey] !== null && m[parentKey] !== undefined);
+  const treeMembers = allMembers.filter(m => m.memberId === 'Plan10-101' || (m[parentKey] !== null && m[parentKey] !== undefined));
 
   if (treeMembers.length === 0) {
     const plan101 = allMembers.find(m => m.memberId === 'Plan10-101');
@@ -1725,3 +1763,165 @@ export async function buildBinaryTreeUI(memberId, treeType, depth = 1) {
     right: rightNode
   };
 }
+
+export async function getNextMemberId() {
+  const allMembers = await prisma.member.findMany({ select: { memberId: true } });
+  let nextNum = 101;
+  if (allMembers.length > 0) {
+    const numbers = allMembers
+      .map(m => {
+        const parts = m.memberId.split('-');
+        return parts.length > 1 ? parseInt(parts[1], 10) : 0;
+      })
+      .filter(num => !isNaN(num));
+    if (numbers.length > 0) {
+      nextNum = Math.max(...numbers) + 1;
+    }
+  }
+  return `Plan10-${nextNum}`;
+}
+
+export async function createMemberAccount(memberData) {
+  if (await isPhoneRegistered(memberData.phone)) {
+    throw new Error('This mobile number is already registered in our database. Please use a different mobile number.');
+  }
+
+  const memberId = await getNextMemberId();
+  const capitalAmount = Number(memberData.capitalInvested) || 0;
+  const termMonths = Number(memberData.termMonths) || 0;
+  
+  const monthlyProfit = capitalAmount ? (capitalAmount / 100000) * 3000 : 0;
+  const monthlyCapitalRefund = termMonths ? Math.round(capitalAmount / termMonths) : 0;
+
+  const newMember = await prisma.member.create({
+    data: {
+      memberId,
+      name: memberData.name,
+      phone: memberData.phone,
+      nid: memberData.nid || '',
+      capitalInvested: capitalAmount,
+      termMonths,
+      monthlyProfit,
+      monthlyCapitalRefund,
+      monthlyTotalPayout: monthlyProfit + monthlyCapitalRefund,
+      joinDate: memberData.joinDate || new Date().toISOString().split('T')[0],
+      status: 'ACTIVE',
+      nomineeName: memberData.nomineeName || 'Legal Heir',
+      relation: memberData.relation || 'Family',
+      fatherName: memberData.fatherName || '',
+      address: memberData.address || '',
+      referredBy: memberData.referredBy || null
+    }
+  });
+
+  if (memberData.category === 'BOTH') {
+    await addToBinaryTree('buyer', memberId);
+    await addToBinaryTree('investor', memberId);
+  } else {
+    const treeType = memberData.category === 'BUYER' ? 'buyer' : 'investor';
+    await addToBinaryTree(treeType, memberId);
+  }
+
+  // Awards sponsor direct commission or referral bonus if referredBy is set
+  if (newMember.referredBy) {
+    const cleanRefCode = newMember.referredBy.trim().toLowerCase();
+    const refDigits = cleanRefCode.replace(/\D/g, '');
+    
+    const matchPhone = (phoneStr) => {
+      if (!phoneStr) return false;
+      const pClean = phoneStr.trim().toLowerCase();
+      if (pClean === cleanRefCode) return true;
+      const pDigits = phoneStr.replace(/\D/g, '');
+      if (refDigits.length >= 10 && pDigits.length >= 10) {
+        return pDigits === refDigits || pDigits.endsWith(refDigits) || refDigits.endsWith(pDigits);
+      }
+      return false;
+    };
+
+    const allMembers = await prisma.member.findMany();
+    let sponsor = allMembers.find(m => 
+      (m.memberId && m.memberId.toLowerCase() === cleanRefCode) || matchPhone(m.phone)
+    );
+
+    if (!sponsor) {
+      const allUsers = await prisma.user.findMany();
+      const sponsorUser = allUsers.find(u => 
+        (u.username && u.username.toLowerCase() === cleanRefCode) || matchPhone(u.phone)
+      );
+      if (sponsorUser) {
+        sponsor = { memberId: sponsorUser.username, name: sponsorUser.name };
+      }
+    }
+
+    if (sponsor) {
+      const sponsorId = sponsor.memberId;
+      if (memberData.category === 'BUYER') {
+        await updateWalletBalance(sponsorId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for new Buyer (${newMember.name})`);
+      } else if (memberData.category === 'INVESTOR') {
+        const bonusAmount = (newMember.capitalInvested || 0) * 0.06;
+        if (bonusAmount > 0) {
+          await updateWalletBalance(sponsorId, bonusAmount, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for new Investor (${newMember.name})`);
+        }
+      } else if (memberData.category === 'BOTH') {
+        await updateWalletBalance(sponsorId, 500, 'REFERRAL_BONUS', `Direct Referral Bonus for new Buyer (${newMember.name})`);
+        const bonusAmount = (newMember.capitalInvested || 0) * 0.06;
+        if (bonusAmount > 0) {
+          await updateWalletBalance(sponsorId, bonusAmount, 'REFERRAL_BONUS', `Direct Referral Commission (6%) for new Investor (${newMember.name})`);
+        }
+      }
+    }
+  }
+
+  const rawPassword = memberData.password || 'user123';
+  const hashedPassword = needsRehash(rawPassword) ? hashPassword(rawPassword) : rawPassword;
+  
+  // Clean up any orphaned user record with the same username to avoid duplicate key errors
+  await prisma.user.deleteMany({ where: { username: memberId } });
+
+  await prisma.user.create({
+    data: {
+      id: `usr_${Date.now()}`,
+      username: memberId,
+      phone: memberData.phone,
+      password: hashedPassword,
+      name: memberData.name,
+      email: memberData.email || `${memberData.name.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
+      role: 'USER',
+      createdAt: new Date()
+    }
+  });
+
+  await addSystemLog(`Created new member account ${memberId} (${memberData.category})`, 'Admin Panel', 'Success');
+  return newMember;
+}
+
+export async function updateUserPassword(username, newPassword) {
+  const user = await findUserRecord(username);
+  if (!user) return false;
+
+  const hashed = hashPassword(newPassword.trim());
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { password: hashed }
+  });
+
+  // Keep any matching application passwords synchronized
+  const appObj = await prisma.application.findFirst({
+    where: {
+      OR: [
+        { phone: user.phone || '' },
+        { phone: user.username }
+      ]
+    }
+  });
+  if (appObj) {
+    await prisma.application.update({
+      where: { id: appObj.id },
+      data: { password: hashed }
+    });
+  }
+
+  await addSystemLog(`Updated password for user ${username}`, 'Admin Panel', 'Success');
+  return true;
+}
+

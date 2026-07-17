@@ -1,9 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../app/lib/prisma-client/index.js';
 
 const prisma = new PrismaClient();
 
 async function testConnection() {
-  console.log('🔍 Testing connection to the SQLite database...');
+  console.log('🔍 Testing connection to the MySQL database...');
   try {
     const userCount = await prisma.user.count();
     const memberCount = await prisma.member.count();

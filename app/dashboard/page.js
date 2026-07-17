@@ -7,6 +7,7 @@ export default function UserDashboardPage() {
   const context = useContext(DashboardTabContext);
   const activeTab = context ? context.activeTab : 'overview';
   const setActiveTab = context ? context.setActiveTab : () => {};
+  const user = context ? context.user : null;
   const setUser = context ? context.setUser : () => {};
   const roleProfile = context ? context.roleProfile : 'INVESTOR';
   const setRoleProfile = context ? context.setRoleProfile : () => {};
@@ -92,6 +93,7 @@ export default function UserDashboardPage() {
       }
     }
     fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   useEffect(() => {
@@ -136,6 +138,7 @@ export default function UserDashboardPage() {
     }
 
     fetchDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger]);
 
   const handleUpdateProfile = async (e) => {
@@ -290,6 +293,18 @@ export default function UserDashboardPage() {
     }
   };
 
+  const handleSignOut = async () => {
+    try {
+      await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logout' })
+      });
+    } catch (e) {}
+    localStorage.removeItem('plan10_user');
+    window.location.href = '/';
+  };
+
   if (loading) {
     return (
       <div style={{ padding: '60px', textAlign: 'center' }}>
@@ -301,10 +316,30 @@ export default function UserDashboardPage() {
 
   if (!dashData || !dashData.member) {
     return (
-      <div className="welcome-hero-card">
-        <span className="hero-tag">Account Notice</span>
-        <h2>Welcome to PLAN-10 BD Member Portal</h2>
-        <p>Your investment application is currently pending verification or undergoing registration setup by our desk.</p>
+      <div className="welcome-hero-card" style={{ maxWidth: '600px', margin: '40px auto', padding: '40px' }}>
+        <span className="hero-tag" style={{ backgroundColor: 'rgba(217, 119, 6, 0.2)', color: '#fbbf24', borderColor: 'rgba(217, 119, 6, 0.4)' }}>
+          Registration Pending
+        </span>
+        <h2>Welcome, {user?.name || 'Member'}!</h2>
+        <p style={{ lineHeight: '1.6', color: '#cbd5e1', marginBottom: '24px' }}>
+          Your portal application (**ID: {user?.username || 'Pending'}**) is currently undergoing verification or registration setup by our desk. 
+          Please contact our support team if you believe this is an error, or click below to sign out.
+        </p>
+        <button 
+          className="btn" 
+          onClick={handleSignOut} 
+          style={{ 
+            backgroundColor: 'rgba(239, 68, 68, 0.15)', 
+            color: '#fca5a5', 
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            padding: '10px 20px',
+            borderRadius: '8px',
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}
+        >
+          <i className="fa-solid fa-right-from-bracket"></i> Sign Out of Portal
+        </button>
       </div>
     );
   }
@@ -1194,7 +1229,7 @@ export default function UserDashboardPage() {
               <div>
                 <h3 style={{ margin: 0 }}><i className="fa-solid fa-user-plus"></i> Join Under a Sponsor (Apply Referral Code)</h3>
                 <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, display: 'block', marginTop: '4px' }}>
-                  Enter your inviter's referral code to connect your account to their network hierarchy.
+                  Enter your inviter&apos;s referral code to connect your account to their network hierarchy.
                 </span>
                 {!member.referredBy && (
                   <span style={{ fontSize: '0.8rem', color: '#fbbf24', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
@@ -1384,7 +1419,7 @@ export default function UserDashboardPage() {
                   <i className="fa-solid fa-user"></i> 1. Applicant Details (আবেদনকারীর তথ্য)
                 </h4>
                 <p style={{ margin: '10px 0', fontSize: '0.95rem' }}><strong style={{ color: '#94a3b8' }}>Full Name:</strong> <span style={{ color: '#ffffff', fontWeight: 600 }}>{member.name}</span></p>
-                <p style={{ margin: '10px 0', fontSize: '0.95rem' }}><strong style={{ color: '#94a3b8' }}>Father's / Husband's Name:</strong> <span style={{ color: '#ffffff', fontWeight: 600 }}>{member.fatherName || 'Not Specified'}</span></p>
+                <p style={{ margin: '10px 0', fontSize: '0.95rem' }}><strong style={{ color: '#94a3b8' }}>Father&apos;s / Husband&apos;s Name:</strong> <span style={{ color: '#ffffff', fontWeight: 600 }}>{member.fatherName || 'Not Specified'}</span></p>
                 <p style={{ margin: '10px 0', fontSize: '0.95rem' }}><strong style={{ color: '#94a3b8' }}>Mobile Number:</strong> <span style={{ color: '#ffffff', fontWeight: 600 }}>{member.phone}</span></p>
                 <p style={{ margin: '10px 0', fontSize: '0.95rem' }}><strong style={{ color: '#94a3b8' }}>National ID (NID):</strong> <span style={{ color: '#ffffff', fontWeight: 600 }}>{member.nid}</span></p>
                 <p style={{ margin: '10px 0', fontSize: '0.95rem' }}><strong style={{ color: '#94a3b8' }}>Present & Permanent Address:</strong> <span style={{ color: '#ffffff', fontWeight: 600 }}>{member.address || 'Gazipur, Dhaka, Bangladesh'}</span></p>
@@ -1455,7 +1490,7 @@ export default function UserDashboardPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px', marginBottom: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '6px' }}>
-                    Father's / Husband's Name (পিতা/স্বামীর নাম)
+                    Father&apos;s / Husband&apos;s Name (পিতা/স্বামীর নাম)
                   </label>
                   <input 
                     type="text"
@@ -1779,7 +1814,7 @@ export default function UserDashboardPage() {
               <div>
                 <h3 style={{ margin: 0 }}><i className="fa-solid fa-user-plus"></i> Join Under a Buyer Sponsor</h3>
                 <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600, display: 'block', marginTop: '4px' }}>
-                  Enter your inviter's referral code to connect your account to their Buyer Tree network hierarchy.
+                  Enter your inviter&apos;s referral code to connect your account to their Buyer Tree network hierarchy.
                 </span>
                 {!member.buyerReferredBy && (
                   <span style={{ fontSize: '0.8rem', color: '#fbbf24', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>

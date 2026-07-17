@@ -8,9 +8,29 @@ export default function AdminMembersPage() {
   const [message, setMessage] = useState('');
   const [filter, setFilter] = useState('ALL'); // 'ALL', 'INVESTOR', 'BUYER', 'BOTH'
 
-  useEffect(() => {
-    loadMembers();
-  }, []);
+  // Create Member Modal States
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createCategory, setCreateCategory] = useState('INVESTOR'); // 'INVESTOR', 'BUYER', or 'BOTH'
+  const [createName, setCreateName] = useState('');
+  const [createPhone, setCreatePhone] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+  const [createNid, setCreateNid] = useState('');
+  const [createCapital, setCreateCapital] = useState('');
+  const [createTermMonths, setCreateTermMonths] = useState('33');
+  const [createSponsor, setCreateSponsor] = useState('');
+  const [createFatherName, setCreateFatherName] = useState('');
+  const [createAddress, setCreateAddress] = useState('');
+  const [createNominee, setCreateNominee] = useState('');
+  const [createRelation, setCreateRelation] = useState('');
+
+  // Password Change Modal States
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  // UI State for Submission
+  const [submitting, setSubmitting] = useState(false);
 
   async function loadMembers() {
     try {
@@ -23,6 +43,125 @@ export default function AdminMembersPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const filterParam = params.get('filter');
+        if (filterParam === 'BUYER' || filterParam === 'INVESTOR' || filterParam === 'BOTH') {
+          setFilter(filterParam);
+        }
+      }
+      loadMembers();
+    }, 0);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleOpenCreateModal = () => {
+    setCreateCategory('INVESTOR');
+    setCreateName('');
+    setCreatePhone('');
+    setCreatePassword('');
+    setCreateNid('');
+    setCreateCapital('');
+    setCreateTermMonths('33');
+    setCreateSponsor('');
+    setCreateFatherName('');
+    setCreateAddress('');
+    setCreateNominee('');
+    setCreateRelation('');
+    setShowCreateModal(true);
+  };
+
+  const handleCreateMember = async (e) => {
+    e.preventDefault();
+    if (!createName.trim() || !createPhone.trim() || !createPassword.trim()) {
+      alert('Name, phone, and password are required.');
+      return;
+    }
+    
+    setSubmitting(true);
+    const payload = {
+      category: createCategory,
+      name: createName,
+      phone: createPhone,
+      password: createPassword,
+      nid: createNid,
+      capitalInvested: (createCategory === 'INVESTOR' || createCategory === 'BOTH') ? Number(createCapital) || 0 : 0,
+      termMonths: (createCategory === 'INVESTOR' || createCategory === 'BOTH') ? Number(createTermMonths) || 0 : 0,
+      referredBy: createSponsor,
+      fatherName: createFatherName,
+      address: createAddress,
+      nomineeName: createNominee,
+      relation: createRelation
+    };
+
+    try {
+      const res = await fetch('/api/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowCreateModal(false);
+        setMessage('Member account created successfully!');
+        setTimeout(() => setMessage(''), 5000);
+        loadMembers();
+      } else {
+        alert(data.message || 'Failed to create member account.');
+      }
+    } catch (err) {
+      alert('Error creating member account.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleOpenPassModal = (member) => {
+    setSelectedMember(member);
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowPassModal(true);
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (!newPassword.trim()) {
+      alert('Password cannot be empty.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert('Passwords do not match.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: selectedMember.memberId,
+          newPassword
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowPassModal(false);
+        setMessage(`Password for ${selectedMember.name} updated successfully!`);
+        setTimeout(() => setMessage(''), 5000);
+      } else {
+        alert(data.message || 'Failed to update password.');
+      }
+    } catch (err) {
+      alert('Error updating password.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   async function handleDelete(memberId) {
     if (!confirm(`Are you sure you want to permanently delete member profile ${memberId}?`)) return;
@@ -48,6 +187,8 @@ export default function AdminMembersPage() {
 
   const filteredMembers = members.filter((m) => {
     if (filter === 'ALL') return true;
+    if (filter === 'INVESTOR') return m.category === 'INVESTOR' || m.category === 'BOTH';
+    if (filter === 'BUYER') return m.category === 'BUYER' || m.category === 'BOTH';
     return m.category === filter;
   });
 
@@ -58,11 +199,32 @@ export default function AdminMembersPage() {
           <h2>Active Member & Investor Directory</h2>
           <p style={{ color: '#64748b', margin: '4px 0 0 0' }}>Verified members with active halal capital return accounts or buyer statuses.</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            onClick={handleOpenCreateModal}
+            className="btn-action btn-approve"
+            style={{
+              background: '#10b981',
+              color: '#fff',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <i className="fa-solid fa-user-plus"></i> Create Account
+          </button>
+          
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {[
             { key: 'ALL', label: 'All Members' },
-            { key: 'INVESTOR', label: 'Investors Only' },
-            { key: 'BUYER', label: 'Buyers Only' },
+            { key: 'INVESTOR', label: 'Investors' },
+            { key: 'BUYER', label: 'Buyers' },
             { key: 'BOTH', label: 'Investor & Buyer' }
           ].map((item) => (
             <button
@@ -85,6 +247,7 @@ export default function AdminMembersPage() {
           ))}
         </div>
       </div>
+    </div>
 
       {message && (
         <div style={{ padding: '12px 20px', backgroundColor: '#d1fae5', color: '#065f46', borderRadius: '8px', marginBottom: '20px', fontWeight: 600 }}>
@@ -158,9 +321,22 @@ export default function AdminMembersPage() {
                   <td style={{ color: '#10b981', fontWeight: 700 }}>{formatBDT(m.monthlyTotalPayout)}</td>
                   <td>{m.joinDate}</td>
                   <td><span className="badge-status badge-active">{m.status}</span></td>
-                  <td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn-action btn-delete" onClick={() => handleDelete(m.memberId)} title="Admin Only: Delete Member">
                       <i className="fa-solid fa-trash"></i> Delete
+                    </button>
+                    <button 
+                      className="btn-action btn-view" 
+                      style={{
+                        background: '#4b5563',
+                        color: '#fff',
+                        border: '1px solid #4b5563',
+                        marginLeft: '8px'
+                      }}
+                      onClick={() => handleOpenPassModal(m)} 
+                      title="Admin Only: Change Password"
+                    >
+                      <i className="fa-solid fa-key"></i> Pass
                     </button>
                   </td>
                 </tr>
@@ -169,6 +345,348 @@ export default function AdminMembersPage() {
           </table>
         )}
       </div>
+
+      {/* Create Account Modal */}
+      {showCreateModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2100,
+          padding: '20px',
+          overflowY: 'auto'
+        }}>
+          <form 
+            onSubmit={handleCreateMember}
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '650px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+              margin: 'auto'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#fff', fontSize: '1.15rem' }}>
+                <i className="fa-solid fa-user-plus" style={{ color: '#10b981', marginRight: '8px' }}></i>
+                Create Member Account
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.25rem' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+              
+              {/* Account Category Selector */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '8px' }}>Account Category *</label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff' }}>
+                    <input 
+                      type="radio" 
+                      name="category" 
+                      value="INVESTOR" 
+                      checked={createCategory === 'INVESTOR'} 
+                      onChange={() => setCreateCategory('INVESTOR')} 
+                    />
+                    Investor Account
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff' }}>
+                    <input 
+                      type="radio" 
+                      name="category" 
+                      value="BUYER" 
+                      checked={createCategory === 'BUYER'} 
+                      onChange={() => setCreateCategory('BUYER')} 
+                    />
+                    Buyer Account
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#fff' }}>
+                    <input 
+                      type="radio" 
+                      name="category" 
+                      value="BOTH" 
+                      checked={createCategory === 'BOTH'} 
+                      onChange={() => setCreateCategory('BOTH')} 
+                    />
+                    Both (Investor & Buyer)
+                  </label>
+                </div>
+              </div>
+
+              {/* Grid: Basic Information */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Full Name *</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={createName} 
+                    onChange={(e) => setCreateName(e.target.value)} 
+                    placeholder="John Doe"
+                    style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Phone Number *</label>
+                  <input 
+                    type="tel" 
+                    required 
+                    value={createPhone} 
+                    onChange={(e) => setCreatePhone(e.target.value)} 
+                    placeholder="e.g. 017XXXXXXXX"
+                    style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                  />
+                </div>
+              </div>
+
+              {/* Grid: Password & NID */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Account Password *</label>
+                  <input 
+                    type="password" 
+                    required 
+                    value={createPassword} 
+                    onChange={(e) => setCreatePassword(e.target.value)} 
+                    placeholder="••••••••"
+                    style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>National ID / Passport Number</label>
+                  <input 
+                    type="text" 
+                    value={createNid} 
+                    onChange={(e) => setCreateNid(e.target.value)} 
+                    placeholder="NID Number"
+                    style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                  />
+                </div>
+              </div>
+
+              {/* Sponsor Referral Code */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Sponsor ID or Phone (Referred By)</label>
+                <input 
+                  type="text" 
+                  value={createSponsor} 
+                  onChange={(e) => setCreateSponsor(e.target.value)} 
+                  placeholder="e.g. Plan10-101 or Sponsor Phone"
+                  style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                />
+              </div>
+
+              {/* Conditional Investment Fields */}
+              {(createCategory === 'INVESTOR' || createCategory === 'BOTH') && (
+                <div style={{ padding: '16px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <h4 style={{ margin: 0, color: '#60a5fa', fontSize: '0.9rem' }}>Investment Details</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Capital Invested (BDT)</label>
+                      <input 
+                        type="number" 
+                        value={createCapital} 
+                        onChange={(e) => setCreateCapital(e.target.value)} 
+                        placeholder="e.g. 100000"
+                        style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Term Duration (Months)</label>
+                      <input 
+                        type="number" 
+                        value={createTermMonths} 
+                        onChange={(e) => setCreateTermMonths(e.target.value)} 
+                        placeholder="e.g. 33"
+                        style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Advanced / Personal Profile fields */}
+              <div style={{ borderTop: '1px solid #334155', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <h4 style={{ margin: 0, color: '#fff', fontSize: '0.9rem' }}>Additional Profile Information (Optional)</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Father&apos;s Name</label>
+                    <input 
+                      type="text" 
+                      value={createFatherName} 
+                      onChange={(e) => setCreateFatherName(e.target.value)} 
+                      placeholder="Father's Name"
+                      style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Full Address</label>
+                    <input 
+                      type="text" 
+                      value={createAddress} 
+                      onChange={(e) => setCreateAddress(e.target.value)} 
+                      placeholder="Address"
+                      style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Nominee Name</label>
+                    <input 
+                      type="text" 
+                      value={createNominee} 
+                      onChange={(e) => setCreateNominee(e.target.value)} 
+                      placeholder="Nominee Full Name"
+                      style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Relation to Nominee</label>
+                    <input 
+                      type="text" 
+                      value={createRelation} 
+                      onChange={(e) => setCreateRelation(e.target.value)} 
+                      placeholder="e.g. Spouse / Brother"
+                      style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button 
+                type="button" 
+                onClick={() => setShowCreateModal(false)}
+                className="btn-action btn-view"
+                style={{ margin: 0, padding: '10px 20px', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                disabled={submitting}
+                className="btn-action btn-approve"
+                style={{ margin: 0, padding: '10px 20px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '8px', cursor: submitting ? 'not-allowed' : 'pointer' }}
+              >
+                {submitting ? 'Creating...' : 'Create Account'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {showPassModal && selectedMember && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2100,
+          padding: '20px'
+        }}>
+          <form 
+            onSubmit={handleChangePassword}
+            style={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '450px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#fff', fontSize: '1.15rem' }}>
+                <i className="fa-solid fa-key" style={{ color: '#3b82f6', marginRight: '8px' }}></i>
+                Update Password
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setShowPassModal(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.25rem' }}
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
+                Updating password for: <strong style={{ color: '#fff' }}>{selectedMember.name} ({selectedMember.memberId})</strong>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>New Password *</label>
+                <input 
+                  type="password" 
+                  required
+                  value={newPassword} 
+                  onChange={(e) => setNewPassword(e.target.value)} 
+                  placeholder="••••••••"
+                  style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600, marginBottom: '6px' }}>Confirm New Password *</label>
+                <input 
+                  type="password" 
+                  required
+                  value={confirmPassword} 
+                  onChange={(e) => setConfirmPassword(e.target.value)} 
+                  placeholder="••••••••"
+                  style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none' }}
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button 
+                type="button" 
+                onClick={() => setShowPassModal(false)}
+                className="btn-action btn-view"
+                style={{ margin: 0, padding: '10px 20px', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                disabled={submitting}
+                className="btn-action btn-approve"
+                style={{ margin: 0, padding: '10px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '8px', cursor: submitting ? 'not-allowed' : 'pointer' }}
+              >
+                {submitting ? 'Updating...' : 'Update Password'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

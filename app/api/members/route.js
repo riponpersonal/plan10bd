@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDataStore, deleteMember } from '@/app/lib/dataStore';
+import { getDataStore, deleteMember, createMemberAccount } from '@/app/lib/dataStore';
 import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
 import { requireAdmin } from '@/app/lib/session';
 
@@ -13,20 +13,22 @@ export async function GET(request) {
   
   // Classify each member dynamically
   const enrichedMembers = store.members.map(member => {
-    // Check if they have an approved investment application or non-zero capital
+    // Check if they have an approved investment application or non-zero capital or are in the investor tree
     const hasInvestmentApp = store.applications.some(
       app => app.phone === member.phone && app.purpose === 'Investment' && app.status === 'APPROVED'
     );
-    const isInvestor = hasInvestmentApp || (member.capitalInvested > 0);
+    const isInInvestorTree = member.memberId === 'Plan10-101' || (member.investorParent !== null && member.investorParent !== undefined);
+    const isInvestor = hasInvestmentApp || (member.capitalInvested > 0) || isInInvestorTree;
 
-    // Check if they have an approved buyer application or any orders
+    // Check if they have an approved buyer application or any orders or are in the buyer tree
     const hasBuyerApp = store.applications.some(
       app => app.phone === member.phone && app.purpose === 'Buy Product' && app.status === 'APPROVED'
     );
     const hasOrders = store.orders.some(
       order => order.phone === member.phone || order.userId === member.memberId || order.memberId === member.memberId
     );
-    const isBuyer = hasBuyerApp || hasOrders;
+    const isInBuyerTree = member.memberId === 'Plan10-101' || (member.buyerParent !== null && member.buyerParent !== undefined);
+    const isBuyer = hasBuyerApp || hasOrders || isInBuyerTree;
 
     let category = 'BOTH';
     if (isInvestor && !isBuyer) {
@@ -67,3 +69,32 @@ export async function DELETE(request) {
     return NextResponse.json({ success: false, message: 'Failed to delete member.' }, { status: 500 });
   }
 }
+
+export async function POST(request) {
+  try {
+    if (!validateOrigin(request)) return csrfDenied();
+    
+    // ✅ SECURITY FIX: Require admin session
+    if (!requireAdmin(request)) {
+      return NextResponse.json({ success: false, message: 'Unauthorized: Admin access required.' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { name, phone, password, category } = body;
+
+    if (!name || !phone || !password || !category) {
+      return NextResponse.json({ success: false, message: 'Name, phone, password, and category are required.' }, { status: 400 });
+    }
+
+    if (category !== 'BUYER' && category !== 'INVESTOR' && category !== 'BOTH') {
+      return NextResponse.json({ success: false, message: 'Invalid category. Must be BUYER, INVESTOR, or BOTH.' }, { status: 400 });
+    }
+
+    const newMember = await createMemberAccount(body);
+    return NextResponse.json({ success: true, member: newMember, message: 'Account created successfully.' });
+  } catch (err) {
+    console.error('Error creating member account:', err);
+    return NextResponse.json({ success: false, message: err.message || 'Failed to create member account.' }, { status: 500 });
+  }
+}
+

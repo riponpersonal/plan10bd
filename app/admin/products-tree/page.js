@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 
 export default function ProductsSellingTreePage() {
@@ -57,21 +57,24 @@ export default function ProductsSellingTreePage() {
   }, [members, orders]);
 
   // Recursively construct the binary tree layout
-  const buildFullBinaryTree = (memberId) => {
-    if (!memberId) return null;
-    const m = members.find(x => x.memberId === memberId);
-    if (!m) return null;
+  const buildFullBinaryTree = useCallback((memberId) => {
+    function traverseTree(id) {
+      if (!id) return null;
+      const m = members.find(x => x.memberId === id);
+      if (!m) return null;
 
-    return {
-      memberId: m.memberId,
-      name: m.name,
-      phone: m.phone,
-      joinDate: m.joinDate,
-      capitalInvested: m.capitalInvested,
-      left: m.buyerLeft ? buildFullBinaryTree(m.buyerLeft) : null,
-      right: m.buyerRight ? buildFullBinaryTree(m.buyerRight) : null
-    };
-  };
+      return {
+        memberId: m.memberId,
+        name: m.name,
+        phone: m.phone,
+        joinDate: m.joinDate,
+        capitalInvested: m.capitalInvested,
+        left: m.buyerLeft ? traverseTree(m.buyerLeft) : null,
+        right: m.buyerRight ? traverseTree(m.buyerRight) : null
+      };
+    }
+    return traverseTree(memberId);
+  }, [members]);
 
   // Find root node of Products Buyer Tree (buyerParent === null)
   const rootMember = useMemo(() => {
@@ -84,7 +87,7 @@ export default function ProductsSellingTreePage() {
 
   const binaryRootNode = useMemo(() => {
     return rootMember ? buildFullBinaryTree(rootMember.memberId) : null;
-  }, [rootMember, members]);
+  }, [rootMember, buildFullBinaryTree]);
 
   // Search filter for suggestion list
   const filteredSuggestions = useMemo(() => {

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 
 /**
  * React Error Boundary — catches rendering errors in child component trees
@@ -64,7 +65,7 @@ export default class ErrorBoundary extends React.Component {
               >
                 Try Again
               </button>
-              <a href="/" style={styles.homeLink}>Go to Home</a>
+              <Link href="/" style={styles.homeLink}>Go to Home</Link>
             </div>
           </div>
         </div>

@@ -15,29 +15,34 @@ if (process.env.PLAN10_PRODUCTION_ORIGIN) {
   ALLOWED_ORIGINS.push(process.env.PLAN10_PRODUCTION_ORIGIN);
 }
 
-/**
- * Validate the Origin or Referer header of a mutating request.
- * Returns true if the request appears to be same-origin.
- * ⛔ SECURITY FIX: Returns false when neither header is present (prevents CSRF bypass).
- * @param {Request} request
- * @returns {boolean}
- */
 export function validateOrigin(request) {
   const origin = request.headers.get('origin');
   const referer = request.headers.get('referer');
+  const host = request.headers.get('host');
+
+  if (!host) return false;
+
+  const getDomain = (urlStr) => {
+    try {
+      const url = new URL(urlStr);
+      return url.host; // Returns hostname:port (e.g. "localhost:3000" or "newplan10bdpvtltd.com")
+    } catch {
+      return null;
+    }
+  };
 
   // Check Origin header first (most reliable)
   if (origin) {
-    return ALLOWED_ORIGINS.some((allowed) => origin === allowed || origin.startsWith(allowed));
+    const originDomain = getDomain(origin);
+    return originDomain === host;
   }
 
   // Fall back to Referer header
   if (referer) {
-    return ALLOWED_ORIGINS.some((allowed) => referer.startsWith(allowed));
+    const refererDomain = getDomain(referer);
+    return refererDomain === host;
   }
 
-  // ⛔ SECURITY FIX: If neither header is present, DENY the request.
-  // Previously this returned true, allowing CSRF bypass by stripping headers.
   return false;
 }
 

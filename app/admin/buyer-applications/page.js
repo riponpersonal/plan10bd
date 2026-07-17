@@ -19,7 +19,7 @@ export default function AdminBuyerApplicationsPage() {
       if (statusParam) {
         const upper = statusParam.toUpperCase();
         if (['ALL', 'PENDING', 'APPROVED', 'REJECTED'].includes(upper)) {
-          setFilter(upper);
+          setTimeout(() => setFilter(upper), 0);
         }
       }
     }
@@ -54,6 +54,8 @@ export default function AdminBuyerApplicationsPage() {
         fetchApplications();
         window.dispatchEvent(new CustomEvent('applications-updated'));
         setTimeout(() => setMessage(''), 3000);
+      } else {
+        alert(data.message || 'Failed to update status');
       }
     } catch (err) {
       console.error('Error updating status');
@@ -64,8 +66,7 @@ export default function AdminBuyerApplicationsPage() {
     if (!confirm(`Are you sure you want to permanently delete application ${id}?`)) return;
     try {
       const res = await fetch(`/api/applications?id=${id}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-role': 'ADMIN' }
+        method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {
@@ -92,7 +93,7 @@ export default function AdminBuyerApplicationsPage() {
         <div>
           <h2>Product Buyer Applications</h2>
           <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '4px' }}>
-            Process applications from users registering via direct product purchase or the landing page "Order Now" flow.
+            Process applications from users registering via direct product purchase or the landing page &quot;Order Now&quot; flow.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>

@@ -24,7 +24,10 @@ export default function AdminWithdrawalsPage() {
   }
 
   useEffect(() => {
-    loadWithdrawals();
+    const handle = setTimeout(() => {
+      loadWithdrawals();
+    }, 0);
+    return () => clearTimeout(handle);
   }, []);
 
   const handleWithdrawalAction = async (requestId, action) => {

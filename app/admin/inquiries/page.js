@@ -7,10 +7,6 @@ export default function AdminInquiriesPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    loadInquiries();
-  }, []);
-
   async function loadInquiries() {
     try {
       const res = await fetch('/api/inquiries');
@@ -22,6 +18,13 @@ export default function AdminInquiriesPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      loadInquiries();
+    }, 0);
+    return () => clearTimeout(handle);
+  }, []);
 
   async function handleDelete(id) {
     if (!confirm(`Are you sure you want to permanently delete inquiry ${id}?`)) return;

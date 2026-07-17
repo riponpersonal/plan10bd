@@ -26,8 +26,11 @@ export default function InvestmentCalculator({
   const [investDuration, setInvestDuration] = useState(33);
   const [calcView, setCalcView] = useState('summary');
 
-  // Sync from parent when parent changes (e.g., via application modal)
-  useEffect(() => { setInvestAmount(initialAmount); }, [initialAmount]);
+  const [prevInitialAmount, setPrevInitialAmount] = useState(initialAmount);
+  if (initialAmount !== prevInitialAmount) {
+    setPrevInitialAmount(initialAmount);
+    setInvestAmount(initialAmount);
+  }
 
   const principal = Number(investAmount) || 0;
   const monthlyProfit = (principal / 100000) * 3000;

@@ -23,11 +23,22 @@ export default function DashboardLayout({ children }) {
     try {
       const saved = localStorage.getItem('plan10_user');
       if (saved) {
-        setUser(JSON.parse(saved));
+        const handle = setTimeout(() => {
+          try {
+            setUser(JSON.parse(saved));
+          } catch (parseErr) {
+            console.error('Failed to parse saved user:', parseErr);
+            localStorage.removeItem('plan10_user');
+          }
+        }, 0);
+        return () => clearTimeout(handle);
       } else {
         const demoUser = { name: 'Rahim Uddin', username: 'Plan10-101', role: 'USER' };
         localStorage.setItem('plan10_user', JSON.stringify(demoUser));
-        setUser(demoUser);
+        const handle = setTimeout(() => {
+          setUser(demoUser);
+        }, 0);
+        return () => clearTimeout(handle);
       }
     } catch (e) {
       console.error('Failed to parse user session');

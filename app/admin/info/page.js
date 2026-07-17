@@ -19,32 +19,35 @@ export default function AdminInfoPage() {
   const [logsList, setLogsList] = useState([]);
 
   useEffect(() => {
-    fetchUsers();
-    fetchLogs();
+    const handle = setTimeout(() => {
+      fetchUsers();
+      fetchLogs();
 
-    // Check query parameters for database operations status post-reload
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const status = urlParams.get('status');
-      if (status === 'reset_success') {
-        setActionMessage({
-          type: 'success',
-          text: 'System database factory reset completed successfully! All records cleared.'
-        });
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setTimeout(() => setActionMessage(null), 5000);
-      } else if (status === 'import_success') {
-        setActionMessage({
-          type: 'success',
-          text: 'System database restored successfully from JSON backup!'
-        });
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setTimeout(() => setActionMessage(null), 5000);
+      // Check query parameters for database operations status post-reload
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const status = urlParams.get('status');
+        if (status === 'reset_success') {
+          setActionMessage({
+            type: 'success',
+            text: 'System database factory reset completed successfully! All records cleared.'
+          });
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setTimeout(() => setActionMessage(null), 5000);
+        } else if (status === 'import_success') {
+          setActionMessage({
+            type: 'success',
+            text: 'System database restored successfully from JSON backup!'
+          });
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setTimeout(() => setActionMessage(null), 5000);
+        }
       }
-    }
+    }, 0);
+    return () => clearTimeout(handle);
   }, []);
 
-  const fetchLogs = async () => {
+  async function fetchLogs() {
     try {
       const res = await fetch('/api/admin/logs');
       const data = await res.json();
@@ -54,9 +57,9 @@ export default function AdminInfoPage() {
     } catch (err) {
       console.error('Failed to load system logs:', err);
     }
-  };
+  }
 
-  const fetchUsers = async () => {
+  async function fetchUsers() {
     try {
       const res = await fetch('/api/admin/roles');
       const data = await res.json();
@@ -68,7 +71,7 @@ export default function AdminInfoPage() {
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }
 
   const handleToggleAdminPower = async (username, currentRole) => {
     const newRole = currentRole === 'ADMIN' ? 'USER' : 'ADMIN';
@@ -672,7 +675,7 @@ export default function AdminInfoPage() {
             </p>
             <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '12px', borderRadius: '8px' }}>
               <span style={{ color: '#fca5a5', fontSize: '0.82rem', display: 'block', marginBottom: '8px', fontWeight: 600 }}>
-                To confirm this operation, type "RESET" below:
+                To confirm this operation, type &quot;RESET&quot; below:
               </span>
               <input 
                 type="text" 

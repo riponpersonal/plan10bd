@@ -48,28 +48,30 @@ export default function ApplicationModal({
   // Synchronize modal open states
   React.useEffect(() => {
     if (isOpen) {
-      setAppCapitalAmount(investAmount);
-      setAppDurationMonths(33);
-      
-      // Auto-populate from logged-in user session
-      if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('plan10_user');
-        if (stored) {
-          try {
-            const userObj = JSON.parse(stored);
-            if (userObj) {
-              if (userObj.username) {
-                setLoggedInUserIdentifier(userObj.username);
+      const handle = setTimeout(() => {
+        setAppCapitalAmount(investAmount);
+        setAppDurationMonths(33);
+        
+        // Auto-populate from logged-in user session
+        if (typeof window !== 'undefined') {
+          const stored = localStorage.getItem('plan10_user');
+          if (stored) {
+            try {
+              const userObj = JSON.parse(stored);
+              if (userObj) {
+                if (userObj.username) {
+                  setLoggedInUserIdentifier(userObj.username);
+                }
+                if (userObj.phone) {
+                  setAppPhone(userObj.phone);
+                }
               }
-              if (userObj.phone) {
-                setAppPhone(userObj.phone);
-              }
+            } catch (e) {
+              console.error('Failed to parse stored user', e);
             }
-          } catch (e) {
-            console.error('Failed to parse stored user', e);
           }
         }
-      }
+      }, 0);
 
       // Load members to check phone registrations
       fetch('/api/members')
@@ -90,70 +92,75 @@ export default function ApplicationModal({
           }
         })
         .catch(err => console.error('Failed to load applications check list', err));
+
+      return () => clearTimeout(handle);
     }
   }, [isOpen, investAmount, investDuration]);
 
   // Check phone changes and session identity match
   React.useEffect(() => {
-    // 1. Search in approved members list
-    let memberMatch = null;
-    if (loggedInUserIdentifier) {
-      memberMatch = membersList.find(m => m.memberId === loggedInUserIdentifier || m.phone === loggedInUserIdentifier);
-    }
-    if (!memberMatch && appPhone) {
-      const cleanPhone = appPhone.replace(/\D/g, '');
-      if (cleanPhone.length >= 8) {
-        memberMatch = membersList.find(m => {
-          if (!m.phone) return false;
-          const mDigits = m.phone.replace(/\D/g, '');
-          return mDigits.endsWith(cleanPhone) || cleanPhone.endsWith(mDigits);
-        });
+    const handle = setTimeout(() => {
+      // 1. Search in approved members list
+      let memberMatch = null;
+      if (loggedInUserIdentifier) {
+        memberMatch = membersList.find(m => m.memberId === loggedInUserIdentifier || m.phone === loggedInUserIdentifier);
       }
-    }
-
-    // 2. Search in pending/rejected applications list
-    let appMatch = null;
-    if (!memberMatch) {
-      if (appPhone) {
+      if (!memberMatch && appPhone) {
         const cleanPhone = appPhone.replace(/\D/g, '');
         if (cleanPhone.length >= 8) {
-          appMatch = applicationsList.find(a => {
-            if (!a.phone) return false;
-            const aDigits = a.phone.replace(/\D/g, '');
-            return aDigits.endsWith(cleanPhone) || cleanPhone.endsWith(aDigits);
+          memberMatch = membersList.find(m => {
+            if (!m.phone) return false;
+            const mDigits = m.phone.replace(/\D/g, '');
+            return mDigits.endsWith(cleanPhone) || cleanPhone.endsWith(mDigits);
           });
         }
       }
-    }
 
-    if (memberMatch) {
-      setIsExistingMember(true);
-      setIsAlreadyInvestor(memberMatch.capitalInvested > 0);
-      setAppApplicantName(memberMatch.name || '');
-      setAppNid(memberMatch.nid || '');
-      setAppAddress(memberMatch.address || '');
-      setAppFatherName(memberMatch.fatherName || '');
-      setAppNomineeName(memberMatch.nomineeName || '');
-      setAppRelation(memberMatch.relation || '');
-      if (memberMatch.phone && appPhone !== memberMatch.phone) {
-        setAppPhone(memberMatch.phone);
+      // 2. Search in pending/rejected applications list
+      let appMatch = null;
+      if (!memberMatch) {
+        if (appPhone) {
+          const cleanPhone = appPhone.replace(/\D/g, '');
+          if (cleanPhone.length >= 8) {
+            appMatch = applicationsList.find(a => {
+              if (!a.phone) return false;
+              const aDigits = a.phone.replace(/\D/g, '');
+              return aDigits.endsWith(cleanPhone) || cleanPhone.endsWith(aDigits);
+            });
+          }
+        }
       }
-    } else if (appMatch) {
-      setIsExistingMember(true);
-      setIsAlreadyInvestor(appMatch.purpose === 'Investment');
-      setAppApplicantName(appMatch.applicantName || '');
-      setAppNid(appMatch.nid || '');
-      setAppAddress(appMatch.address || '');
-      setAppFatherName(appMatch.fatherName || '');
-      setAppNomineeName(appMatch.nomineeName || '');
-      setAppRelation(appMatch.relation || '');
-      if (appMatch.phone && appPhone !== appMatch.phone) {
-        setAppPhone(appMatch.phone);
+
+      if (memberMatch) {
+        setIsExistingMember(true);
+        setIsAlreadyInvestor(memberMatch.capitalInvested > 0);
+        setAppApplicantName(memberMatch.name || '');
+        setAppNid(memberMatch.nid || '');
+        setAppAddress(memberMatch.address || '');
+        setAppFatherName(memberMatch.fatherName || '');
+        setAppNomineeName(memberMatch.nomineeName || '');
+        setAppRelation(memberMatch.relation || '');
+        if (memberMatch.phone && appPhone !== memberMatch.phone) {
+          setAppPhone(memberMatch.phone);
+        }
+      } else if (appMatch) {
+        setIsExistingMember(true);
+        setIsAlreadyInvestor(appMatch.purpose === 'Investment');
+        setAppApplicantName(appMatch.applicantName || '');
+        setAppNid(appMatch.nid || '');
+        setAppAddress(appMatch.address || '');
+        setAppFatherName(appMatch.fatherName || '');
+        setAppNomineeName(appMatch.nomineeName || '');
+        setAppRelation(appMatch.relation || '');
+        if (appMatch.phone && appPhone !== appMatch.phone) {
+          setAppPhone(appMatch.phone);
+        }
+      } else {
+        setIsExistingMember(false);
+        setIsAlreadyInvestor(false);
       }
-    } else {
-      setIsExistingMember(false);
-      setIsAlreadyInvestor(false);
-    }
+    }, 0);
+    return () => clearTimeout(handle);
   }, [appPhone, loggedInUserIdentifier, membersList, applicationsList]);
 
   React.useEffect(() => {
@@ -166,7 +173,10 @@ export default function ApplicationModal({
       };
       const ref = getQueryParam('ref');
       if (ref) {
-        setAppReferredBy(ref);
+        const handle = setTimeout(() => {
+          setAppReferredBy(ref);
+        }, 0);
+        return () => clearTimeout(handle);
       }
     }
   }, [isOpen]);

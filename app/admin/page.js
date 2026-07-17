@@ -58,7 +58,8 @@ export default function AdminDashboardOverview() {
   const pendingOrders = orders.filter(o => o.status === 'PENDING').length;
   const processingOrders = orders.filter(o => o.status === 'PROCESSING').length;
   const pendingBuyerApps = buyerApps.filter(a => a.status === 'PENDING').length;
-  const activeBuyers = buyerApps.filter(a => a.status === 'APPROVED').length;
+  const activeBuyers = members.filter(m => m.category === 'BUYER' || m.category === 'BOTH').length;
+  const activeInvestors = members.filter(m => m.category === 'INVESTOR' || m.category === 'BOTH').length;
   const buyerReferralsPayout = buyerApps.filter(a => a.status === 'APPROVED' && a.referredBy).length * 500;
   const deliveredUnits = orders.filter(o => o.status === 'DELIVERED').length;
   const rejectedOrders = orders.filter(o => o.status === 'REJECTED').length;
@@ -149,7 +150,7 @@ export default function AdminDashboardOverview() {
           </div>
         </Link>
 
-        <Link href="/admin/buyer-applications?status=APPROVED" className="metric-card interactive">
+        <Link href="/admin/members?filter=BUYER" className="metric-card interactive">
           <div className="metric-info">
             <h4>Active Product Buyers</h4>
             <h3 className="metric-number">{activeBuyers}</h3>
@@ -216,10 +217,10 @@ export default function AdminDashboardOverview() {
           </div>
         </Link>
 
-        <Link href="/admin/members" className="metric-card interactive">
+        <Link href="/admin/members?filter=INVESTOR" className="metric-card interactive">
           <div className="metric-info">
             <h4>Active Investors / Members</h4>
-            <h3 className="metric-number">{members.length}</h3>
+            <h3 className="metric-number">{activeInvestors}</h3>
           </div>
           <div className="metric-icon icon-purple">
             <i className="fa-solid fa-users"></i>

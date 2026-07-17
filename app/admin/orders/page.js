@@ -8,23 +8,6 @@ export default function AdminOrdersPage() {
   const [filter, setFilter] = useState('ALL'); // 'ALL', 'PENDING', 'PROCESSING', 'DELIVERED', 'REJECTED'
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const statusParam = params.get('status');
-      if (statusParam) {
-        const upper = statusParam.toUpperCase();
-        if (['ALL', 'PENDING', 'PROCESSING', 'DELIVERED', 'REJECTED'].includes(upper)) {
-          setFilter(upper);
-        }
-      }
-    }
-  }, []);
-
   async function fetchOrders() {
     try {
       const res = await fetch('/api/orders', {
@@ -40,6 +23,26 @@ export default function AdminOrdersPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      fetchOrders();
+    }, 0);
+    return () => clearTimeout(handle);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const statusParam = params.get('status');
+      if (statusParam) {
+        const upper = statusParam.toUpperCase();
+        if (['ALL', 'PENDING', 'PROCESSING', 'DELIVERED', 'REJECTED'].includes(upper)) {
+          setTimeout(() => setFilter(upper), 0);
+        }
+      }
+    }
+  }, []);
 
   async function handleStatusChange(orderId, newStatus) {
     try {
@@ -139,7 +142,7 @@ export default function AdminOrdersPage() {
             <i className="fa-solid fa-boxes-stacked" style={{ fontSize: '3rem', color: '#475569', marginBottom: '16px', display: 'block' }}></i>
             <h3 style={{ color: '#ffffff', marginBottom: '8px', fontSize: '1.2rem', fontWeight: 600 }}>No Orders Found</h3>
             <p style={{ fontSize: '0.85rem', maxWidth: '400px', margin: '0 auto', lineHeight: '1.5' }}>
-              There are currently no orders registered under the "{filter}" category filter.
+              There are currently no orders registered under the &quot;{filter}&quot; category filter.
             </p>
           </div>
         ) : (

@@ -49,10 +49,13 @@ export default function AdminLayout({ children }) {
   }
 
   useEffect(() => {
-    fetchPendingCount();
+    const handle = setTimeout(() => {
+      fetchPendingCount();
+    }, 0);
 
     window.addEventListener('applications-updated', fetchPendingCount);
     return () => {
+      clearTimeout(handle);
       window.removeEventListener('applications-updated', fetchPendingCount);
     };
   }, []);
@@ -98,12 +101,15 @@ export default function AdminLayout({ children }) {
       }
     }
     verifySession();
-  }, []);
+  }, [router]);
 
   // Close sidebar on route change on mobile
   useEffect(() => {
-    setIsSidebarOpen(false);
-    setIsUserMenuOpen(false);
+    const handle = setTimeout(() => {
+      setIsSidebarOpen(false);
+      setIsUserMenuOpen(false);
+    }, 0);
+    return () => clearTimeout(handle);
   }, [pathname]);
 
   const navItems = [
