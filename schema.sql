@@ -1,7 +1,8 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE `User` (
     `id` VARCHAR(191) NOT NULL,
     `username` VARCHAR(191) NOT NULL,
+    `publicId` VARCHAR(191) NULL,
     `password` VARCHAR(191) NOT NULL,
     `name` VARCHAR(191) NOT NULL,
     `email` VARCHAR(191) NOT NULL,
@@ -10,8 +11,13 @@ CREATE TABLE `User` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     UNIQUE INDEX `User_username_key`(`username`),
+    UNIQUE INDEX `User_publicId_key`(`publicId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Indexes for User
+CREATE INDEX `User_phone_idx` ON `User`(`phone`);
+CREATE INDEX `User_role_idx` ON `User`(`role`);
 
 -- CreateTable
 CREATE TABLE `Application` (
@@ -35,12 +41,20 @@ CREATE TABLE `Application` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- Indexes for Application
+CREATE INDEX `Application_phone_idx` ON `Application`(`phone`);
+CREATE INDEX `Application_status_idx` ON `Application`(`status`);
+CREATE INDEX `Application_purpose_idx` ON `Application`(`purpose`);
+CREATE INDEX `Application_referredBy_idx` ON `Application`(`referredBy`);
+
 -- CreateTable
 CREATE TABLE `Member` (
     `memberId` VARCHAR(191) NOT NULL,
+    `publicId` VARCHAR(191) NULL,
     `name` VARCHAR(191) NOT NULL,
     `phone` VARCHAR(191) NOT NULL,
     `nid` VARCHAR(191) NOT NULL,
+    `category` VARCHAR(191) NOT NULL DEFAULT 'INVESTOR',
     `capitalInvested` DOUBLE NOT NULL,
     `termMonths` INTEGER NOT NULL,
     `monthlyProfit` DOUBLE NOT NULL,
@@ -61,8 +75,17 @@ CREATE TABLE `Member` (
     `investorLeft` VARCHAR(191) NULL,
     `investorRight` VARCHAR(191) NULL,
 
+    UNIQUE INDEX `Member_publicId_key`(`publicId`),
     PRIMARY KEY (`memberId`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Indexes for Member
+CREATE INDEX `Member_phone_idx` ON `Member`(`phone`);
+CREATE INDEX `Member_referredBy_idx` ON `Member`(`referredBy`);
+CREATE INDEX `Member_buyerReferredBy_idx` ON `Member`(`buyerReferredBy`);
+CREATE INDEX `Member_buyerParent_idx` ON `Member`(`buyerParent`);
+CREATE INDEX `Member_investorParent_idx` ON `Member`(`investorParent`);
+CREATE INDEX `Member_status_idx` ON `Member`(`status`);
 
 -- CreateTable
 CREATE TABLE `Payout` (
@@ -80,6 +103,11 @@ CREATE TABLE `Payout` (
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Indexes for Payout
+CREATE INDEX `Payout_memberId_idx` ON `Payout`(`memberId`);
+CREATE INDEX `Payout_status_idx` ON `Payout`(`status`);
+CREATE INDEX `Payout_memberId_monthNumber_idx` ON `Payout`(`memberId`, `monthNumber`);
 
 -- CreateTable
 CREATE TABLE `Product` (
@@ -141,6 +169,11 @@ CREATE TABLE `Order` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- Indexes for Order
+CREATE INDEX `Order_username_idx` ON `Order`(`username`);
+CREATE INDEX `Order_status_idx` ON `Order`(`status`);
+CREATE INDEX `Order_createdAt_idx` ON `Order`(`createdAt`);
+
 -- CreateTable
 CREATE TABLE `Wallet` (
     `username` VARCHAR(191) NOT NULL,
@@ -161,6 +194,11 @@ CREATE TABLE `Transaction` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- Indexes for Transaction
+CREATE INDEX `Transaction_username_idx` ON `Transaction`(`username`);
+CREATE INDEX `Transaction_type_idx` ON `Transaction`(`type`);
+CREATE INDEX `Transaction_date_idx` ON `Transaction`(`date`);
+
 -- CreateTable
 CREATE TABLE `Notification` (
     `id` VARCHAR(191) NOT NULL,
@@ -172,6 +210,10 @@ CREATE TABLE `Notification` (
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Indexes for Notification
+CREATE INDEX `Notification_username_idx` ON `Notification`(`username`);
+CREATE INDEX `Notification_timestamp_idx` ON `Notification`(`timestamp`);
 
 -- CreateTable
 CREATE TABLE `Withdrawal` (
@@ -186,6 +228,11 @@ CREATE TABLE `Withdrawal` (
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Indexes for Withdrawal
+CREATE INDEX `Withdrawal_username_idx` ON `Withdrawal`(`username`);
+CREATE INDEX `Withdrawal_status_idx` ON `Withdrawal`(`status`);
+CREATE INDEX `Withdrawal_requestedAt_idx` ON `Withdrawal`(`requestedAt`);
 
 -- AddForeignKey
 ALTER TABLE `Transaction` ADD CONSTRAINT `Transaction_username_fkey` FOREIGN KEY (`username`) REFERENCES `Wallet`(`username`) ON DELETE CASCADE ON UPDATE CASCADE;

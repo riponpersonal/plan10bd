@@ -11,7 +11,7 @@ export default function AdminOrdersPage() {
   async function fetchOrders() {
     try {
       const res = await fetch('/api/orders', {
-        headers: { 'x-admin-role': 'ADMIN' }
+        method: 'GET' // Session auth via httpOnly cookie
       });
       const data = await res.json();
       if (data.success) {
@@ -48,10 +48,7 @@ export default function AdminOrdersPage() {
     try {
       const res = await fetch('/api/orders', {
         method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-admin-role': 'ADMIN'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId, status: newStatus })
       });
       const data = await res.json();

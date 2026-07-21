@@ -120,9 +120,6 @@ export default function AdminProductsPage() {
       try {
         const res = await fetch('/api/upload', {
           method: 'POST',
-          headers: {
-            'x-admin-role': 'ADMIN'
-          },
           body: formData
         });
         const data = await res.json();
@@ -160,19 +157,13 @@ export default function AdminProductsPage() {
       if (isEditing) {
         res = await fetch(`/api/products?id=${currentProductId}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-admin-role': 'ADMIN'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       } else {
         res = await fetch('/api/products', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-admin-role': 'ADMIN'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       }
@@ -196,10 +187,7 @@ export default function AdminProductsPage() {
     try {
       const res = await fetch('/api/categories', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-role': 'ADMIN'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newCategoryName })
       });
       const data = await res.json();
@@ -221,10 +209,7 @@ export default function AdminProductsPage() {
     if (!window.confirm('Are you sure you want to delete this product?')) return;
     try {
       const res = await fetch(`/api/products?id=${id}`, {
-        method: 'DELETE',
-        headers: {
-          'x-admin-role': 'ADMIN'
-        }
+        method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {

@@ -15,9 +15,37 @@ export default function DashboardLayout({ children }) {
   const [roleProfile, setRoleProfile] = useState('INVESTOR');
   const [showNavDropdown, setShowNavDropdown] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [accounts, setAccounts] = useState([]);
   
   const navDropdownRef = useRef(null);
   const profileModalRef = useRef(null);
+
+  const handleSwitchAccount = async (targetUsername) => {
+    try {
+      const res = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'switch_account', targetUsername })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const updatedUser = {
+          name: data.user.name,
+          username: data.user.username,
+          role: data.user.role,
+          publicId: data.user.publicId || null,
+        };
+        setUser(updatedUser);
+        localStorage.setItem('plan10_user', JSON.stringify(updatedUser));
+        window.location.reload();
+      } else {
+        alert(data.message || 'Failed to switch account.');
+      }
+    } catch (err) {
+      console.error('Error switching account:', err);
+      alert('Error switching account.');
+    }
+  };
 
   useEffect(() => {
     try {
@@ -72,7 +100,7 @@ export default function DashboardLayout({ children }) {
   };
 
   return (
-    <DashboardTabContext.Provider value={{ activeTab, setActiveTab, user, setUser, roleProfile, setRoleProfile }}>
+    <DashboardTabContext.Provider value={{ activeTab, setActiveTab, user, setUser, roleProfile, setRoleProfile, accounts, setAccounts, handleSwitchAccount }}>
       <div className="user-dash-wrapper">
         {/* Main Content Area with Full Width Top-Navigation Dropdown */}
         <main className="user-main-content full-width">
@@ -200,12 +228,65 @@ export default function DashboardLayout({ children }) {
                     </div>
                     <div className="popover-user-info">
                       <h4>{user?.name || (roleProfile === 'BUYER' ? 'Products Buyer' : (roleProfile === 'DUAL' ? 'Plan10 Partner' : 'Investor Member'))}</h4>
-                      <span className="popover-account-id">Account ID: {user?.username || 'Plan10-101'}</span>
+                      <span className="popover-account-id">Account: {user?.publicId || user?.username || 'Plan10-101'}</span>
                       <span className="popover-verified-badge" style={{ backgroundColor: roleProfile === 'BUYER' ? '#2563eb' : (roleProfile === 'DUAL' ? '#7c3aed' : '#059669') }}>
                         <i className={`fa-solid ${roleProfile === 'BUYER' ? 'fa-cart-shopping' : (roleProfile === 'DUAL' ? 'fa-handshake' : 'fa-shield-check')}`}></i> {roleProfile === 'BUYER' ? 'Verified Buyer' : (roleProfile === 'DUAL' ? 'Verified Partner' : 'Verified Investor')}
                       </span>
                     </div>
                   </div>
+
+                  {/* Account Switcher Section */}
+                  {accounts && accounts.length > 1 && (
+                    <div className="popover-switcher-section" style={{ borderBottom: '1px solid #334155', padding: '12px 16px', backgroundColor: '#111827' }}>
+                      <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Your Accounts</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {accounts.map((acc) => {
+                          const isCurrent = acc.username === user?.username;
+                          return (
+                            <button
+                              key={acc.username}
+                              onClick={() => !isCurrent && handleSwitchAccount(acc.username)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                width: '100%',
+                                padding: '8px 12px',
+                                borderRadius: '6px',
+                                border: '1px solid',
+                                borderColor: isCurrent ? '#10b981' : '#374151',
+                                backgroundColor: isCurrent ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                                color: isCurrent ? '#10b981' : '#d1d5db',
+                                cursor: isCurrent ? 'default' : 'pointer',
+                                fontSize: '0.8rem',
+                                textAlign: 'left',
+                                transition: 'all 0.2s',
+                              }}
+                              disabled={isCurrent}
+                              title={isCurrent ? 'Current active account' : `Switch to ${acc.name}`}
+                            >
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ fontWeight: 600 }}>{acc.name}</span>
+                                <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{acc.publicDisplayId || acc.username}</span>
+                              </div>
+                              <span 
+                                style={{ 
+                                  fontSize: '0.65rem', 
+                                  padding: '2px 6px', 
+                                  borderRadius: '4px', 
+                                  backgroundColor: acc.roleProfile === 'BUYER' ? '#2563eb' : (acc.roleProfile === 'DUAL' ? '#7c3aed' : '#059669'),
+                                  color: '#ffffff',
+                                  fontWeight: 600
+                                }}
+                              >
+                                {acc.roleProfile}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="popover-actions-body">
                     <button 

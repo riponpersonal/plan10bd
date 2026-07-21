@@ -72,6 +72,12 @@ export function validateApplication(body) {
 
   if (!body.password || body.password.trim().length < 8) {
     errors.push('Password must be at least 8 characters.');
+  } else if (!/[A-Z]/.test(body.password)) {
+    errors.push('Password must contain at least one uppercase letter.');
+  } else if (!/[a-z]/.test(body.password)) {
+    errors.push('Password must contain at least one lowercase letter.');
+  } else if (!/[0-9]/.test(body.password)) {
+    errors.push('Password must contain at least one number.');
   }
 
   // Investment-specific validation

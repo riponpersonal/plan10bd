@@ -6,11 +6,32 @@ import { requireAdmin, getSessionFromRequest } from '@/app/lib/session';
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const username = searchParams.get('username');
+    const queryUsername = searchParams.get('username');
 
-    if (username) {
+    if (queryUsername) {
+      // Require authentication to view orders
+      const session = getSessionFromRequest(request);
+      if (!session) {
+        return NextResponse.json(
+          { success: false, message: 'Unauthorized: Please log in to view orders.' },
+          { status: 401 }
+        );
+      }
+
+      // Users can only see their own orders; admins can see any
+      const cleanQuery = queryUsername.trim().toLowerCase();
+      const sessionUsername = (session.username || '').toLowerCase();
+      const sessionPhone = (session.phone || '').toLowerCase();
+
+      if (session.role !== 'ADMIN' && cleanQuery !== sessionUsername && cleanQuery !== sessionPhone) {
+        return NextResponse.json(
+          { success: false, message: 'Forbidden: You can only view your own orders.' },
+          { status: 403 }
+        );
+      }
+
       const store = await getDataStore();
-      const cleanUser = username.trim().toLowerCase();
+      const cleanUser = queryUsername.trim().toLowerCase();
       const userObj = store.users.find(u => u.username && u.username.toLowerCase() === cleanUser);
       const memberObj = store.members.find(m => m.memberId && m.memberId.toLowerCase() === cleanUser);
       const phone = userObj ? userObj.phone : (memberObj ? memberObj.phone : null);

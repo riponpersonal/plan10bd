@@ -5,14 +5,18 @@
 import crypto from 'crypto';
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-const SECRET_KEY = process.env.PLAN10_SECRET_KEY || 'plan10-bd-default-secret-dev-only-2026';
 const COOKIE_NAME = 'plan10_session';
 const SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours in seconds
 
-function ensureSecretKey() {
-  if (IS_PRODUCTION && !process.env.PLAN10_SECRET_KEY) {
-    console.error('⚠️ WARNING: PLAN10_SECRET_KEY environment variable is not set. Using fallback key for session signing.');
+function getSecretKey() {
+  const key = process.env.PLAN10_SECRET_KEY;
+  if (!key || key.length < 16) {
+    throw new Error(
+      '[FATAL] PLAN10_SECRET_KEY environment variable is NOT set or is too short. ' +
+      'The application will refuse to start. Generate a strong random key (e.g. "openssl rand -hex 32") and set it in your .env or production environment.'
+    );
   }
+  return key;
 }
 
 /**
@@ -22,20 +26,21 @@ function ensureSecretKey() {
  * @returns {string} signed token
  */
 export function createSessionToken(user) {
-  ensureSecretKey();
+  const secretKey = getSecretKey();
   const payload = {
     id: user.id || user.username,
     username: user.username,
     name: user.name,
     role: user.role,
     phone: user.phone || null,
+    publicId: user.publicId || null,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE
   };
 
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const sig = crypto
-    .createHmac('sha256', SECRET_KEY)
+    .createHmac('sha256', secretKey)
     .update(payloadB64)
     .digest('base64url');
 
@@ -48,7 +53,6 @@ export function createSessionToken(user) {
  * @returns {{ valid: boolean, payload: object|null, expired: boolean }}
  */
 export function verifySessionToken(token) {
-  ensureSecretKey();
   if (!token || typeof token !== 'string') {
     return { valid: false, payload: null, expired: false };
   }
@@ -61,8 +65,9 @@ export function verifySessionToken(token) {
   const [payloadB64, sig] = parts;
 
   // Verify signature
+  const secretKey = getSecretKey();
   const expectedSig = crypto
-    .createHmac('sha256', SECRET_KEY)
+    .createHmac('sha256', secretKey)
     .update(payloadB64)
     .digest('base64url');
 
@@ -108,8 +113,8 @@ export function getSessionCookieName() {
 export function getSessionCookieOptions(clear = false) {
   return {
     httpOnly: true,
-    secure: IS_PRODUCTION && process.env.PLAN10_USE_SECURE_COOKIE !== 'false',
-    sameSite: 'lax',
+    secure: IS_PRODUCTION,
+    sameSite: 'strict',
     path: '/',
     maxAge: clear ? 0 : SESSION_MAX_AGE,
   };

@@ -1,737 +1,435 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function AdminReferralsTreePage() {
+  const router = useRouter();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRootId, setSelectedRootId] = useState('SYSTEM'); // 'SYSTEM' or specific memberId
   const [selectedMember, setSelectedMember] = useState(null);
-  const [collapsedNodeIds, setCollapsedNodeIds] = useState(new Set());
   const [zoomScale, setZoomScale] = useState(1.0);
+  const [placingId, setPlacingId] = useState(null);
+  const [notification, setNotification] = useState(null);
+  const [placementSlot, setPlacementSlot] = useState(null);
+  const [showUnplaced, setShowUnplaced] = useState(false);
+  const [expandedUnplaced, setExpandedUnplaced] = useState(null);
+  const [detailCard, setDetailCard] = useState(null);
 
-  // Load members on mount
+  async function loadMembers() {
+    try {
+      const res = await fetch('/api/members');
+      const data = await res.json();
+      if (data.success) setMembers(data.members || []);
+    } catch (e) { console.error('Failed to load members', e); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { loadMembers(); }, []);
+
   useEffect(() => {
-    async function loadMembers() {
-      try {
-        const res = await fetch('/api/members');
-        const data = await res.json();
-        if (data.success) {
-          setMembers(data.members || []);
-        }
-      } catch (e) {
-        console.error('Failed to load active members', e);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadMembers();
-  }, []);
+    if (notification) { const t = setTimeout(() => setNotification(null), 4000); return () => clearTimeout(t); }
+  }, [notification]);
 
-  // Compute stats for all members recursively
-  const downlineStats = useMemo(() => {
-    const stats = {};
-    const visited = new Set();
+  const treeType = 'investor';
+  const parentKey = 'investorParent';
+  const leftKey = 'investorLeft';
+  const rightKey = 'investorRight';
+  const referKey = 'referredBy';
 
-    const calculate = (mId) => {
-      if (stats[mId]) return stats[mId];
-      if (visited.has(mId)) {
-        return { l1: 0, l2: 0, l3: 0, total: 0, volume: 0, depth: 0 };
-      }
-      visited.add(mId);
+  // ─── Correct Stats: filter by investor + both categories ───
+  const stats = useMemo(() => {
+    // Only INVESTOR and BOTH category members count as investor-relevant
+    const investorMembers = members.filter(m => m.category === 'INVESTOR' || m.category === 'BOTH');
+    const total = investorMembers.length;
+    const withReferral = investorMembers.filter(m => m[referKey] && m[referKey] !== '');
+    const withoutReferral = investorMembers.filter(m => !m[referKey] || m[referKey] === '');
+    const totalCapital = investorMembers.reduce((sum, m) => sum + (m.capitalInvested || 0), 0);
+    const referralCapital = withReferral.reduce((sum, m) => sum + (m.capitalInvested || 0), 0);
+    const unplacedCapital = withoutReferral.reduce((sum, m) => sum + (m.capitalInvested || 0), 0);
+    const totalMonthlyPayout = investorMembers.reduce((sum, m) => sum + (m.monthlyTotalPayout || 0), 0);
 
-      const children = members.filter(m => m.referredBy === mId);
-      const l1Count = children.length;
-      let l2Count = 0;
-      let l3Count = 0;
-      let totalCount = l1Count;
-      let networkVolume = children.reduce((sum, child) => sum + (child.capitalInvested || 0), 0);
-      let maxDepth = 0;
+    // Count by category across ALL members
+    const investors = members.filter(m => m.category === 'INVESTOR').length;
+    const buyers = members.filter(m => m.category === 'BUYER').length;
+    const both = members.filter(m => m.category === 'BOTH').length;
 
-      children.forEach(child => {
-        const childStats = calculate(child.memberId);
-        l2Count += childStats.l1;
-        l3Count += childStats.l2;
-        totalCount += childStats.total;
-        networkVolume += childStats.volume;
-        maxDepth = Math.max(maxDepth, childStats.depth + 1);
-      });
+    // Top referrers
+    const referrerCounts = {};
+    investorMembers.forEach(m => { if (m[referKey]) { referrerCounts[m[referKey]] = (referrerCounts[m[referKey]] || 0) + 1; } });
+    const sortedReferrers = Object.entries(referrerCounts).sort((a, b) => b[1] - a[1]);
 
-      stats[mId] = {
-        l1: l1Count,
-        l2: l2Count,
-        l3: l3Count,
-        total: totalCount,
-        volume: networkVolume,
-        depth: maxDepth
-      };
-      
-      visited.delete(mId); // Allow calculation along other pathways if needed, but tree is DAG
-      return stats[mId];
+    // Tree depth
+    let maxDepth = 0;
+    const calcDepth = (id, d) => {
+      if (!id) return;
+      const m = members.find(x => x.memberId === id);
+      if (!m) return;
+      maxDepth = Math.max(maxDepth, d);
+      if (m[leftKey]) calcDepth(m[leftKey], d + 1);
+      if (m[rightKey]) calcDepth(m[rightKey], d + 1);
     };
+    const root = members.find(m => m.memberId === 'Plan10-101');
+    if (root) calcDepth(root.memberId, 1);
 
-    members.forEach(m => {
-      calculate(m.memberId);
-    });
-
-    return stats;
-  }, [members]);
-
-  // Global Network Stats
-  const globalStats = useMemo(() => {
-    const totalMembers = members.length;
-    const totalCapital = members.reduce((sum, m) => sum + (m.capitalInvested || 0), 0);
-    
-    // Find deepest level in tree from any root
-    let deepestLevel = 0;
-    members.forEach(m => {
-      if (downlineStats[m.memberId]) {
-        deepestLevel = Math.max(deepestLevel, downlineStats[m.memberId].depth);
-      }
-    });
-
-    // Find recruiter with most direct referrals
-    let topRecruiter = { memberId: 'N/A', name: 'None', count: 0 };
-    members.forEach(m => {
-      const l1Count = members.filter(sub => sub.referredBy === m.memberId).length;
-      if (l1Count > topRecruiter.count) {
-        topRecruiter = { memberId: m.memberId, name: m.name, count: l1Count };
-      }
-    });
-
-    // Calculate total referral commissions at 6% direct rate
-    const totalReferralCommissions = members
-      .filter(m => m.referredBy && members.some(parent => parent.memberId === m.referredBy))
-      .reduce((sum, m) => sum + (m.capitalInvested * 0.06), 0);
+    // Avg capital
+    const avgCapital = total > 0 ? totalCapital / total : 0;
 
     return {
-      totalMembers,
-      totalCapital,
-      deepestLevel: totalMembers > 0 ? deepestLevel + 1 : 0, // include root
-      topRecruiter,
-      totalReferralCommissions
+      total, withReferral: withReferral.length, withoutReferral: withoutReferral.length,
+      totalCapital, referralCapital, unplacedCapital,
+      investors, buyers, both,
+      totalMonthlyPayout, maxDepth, avgCapital,
+      topReferrer: sortedReferrers[0] ? { id: sortedReferrers[0][0], count: sortedReferrers[0][1] } : null,
+      avgCapital
     };
-  }, [members, downlineStats]);
+  }, [members]);
 
-  // Build Hierarchical Tree Structure
-  const treeData = useMemo(() => {
-    if (members.length === 0) return null;
+  // Unplaced investors (no referral code)
+  const unplacedMembers = useMemo(() => {
+    const investorMembers = members.filter(m => m.category === 'INVESTOR' || m.category === 'BOTH');
+    return investorMembers.filter(m => !m[referKey] || m[referKey] === '').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [members]);
 
-    const visited = new Set();
-    
-    const buildNode = (member) => {
-      if (visited.has(member.memberId)) return null;
-      visited.add(member.memberId);
-      
-      const children = members
-        .filter(m => m.referredBy === member.memberId)
-        .map(buildNode)
-        .filter(Boolean);
-        
-      return {
-        memberId: member.memberId,
-        name: member.name,
-        phone: member.phone,
-        joinDate: member.joinDate,
-        capitalInvested: member.capitalInvested,
-        children
-      };
+  // ─── Detail card helper ───
+  const handleCardClick = (card) => {
+    const paths = {
+      total: '/admin/members',
+      withReferral: '/admin/members?filter=INVESTOR',
+      unplaced: () => setShowUnplaced(!showUnplaced),
+      payout: '/admin/payouts',
     };
+    const target = paths[card];
+    if (typeof target === 'function') target();
+    else if (target) router.push(target);
+  };
 
-    if (selectedRootId === 'SYSTEM') {
-      const memberIds = new Set(members.map(m => m.memberId));
-      const roots = members.filter(m => !m.referredBy || !memberIds.has(m.referredBy));
-      
-      return {
-        memberId: 'SYSTEM',
-        name: 'PLAN-10 BD Network',
-        capitalInvested: members.reduce((sum, m) => sum + (m.capitalInvested || 0), 0),
-        children: roots.map(buildNode).filter(Boolean)
-      };
-    } else {
-      const rootMember = members.find(m => m.memberId === selectedRootId);
-      if (!rootMember) return null;
-      return buildNode(rootMember);
-    }
-  }, [members, selectedRootId]);
+  const handlePlaceMember = async (memberId, side, parentId) => {
+    setPlacingId(memberId); setNotification(null);
+    try {
+      const res = await fetch('/api/members', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ memberId, treeType, side, parentId }) });
+      const data = await res.json();
+      if (data.success) { setNotification({ type: 'success', message: data.message }); setSelectedMember(null); setPlacementSlot(null); await loadMembers(); }
+      else setNotification({ type: 'error', message: data.message });
+    } catch (err) { setNotification({ type: 'error', message: 'Network error.' }); }
+    finally { setPlacingId(null); }
+  };
 
-  // Handle zoom controls
   const handleZoomIn = () => setZoomScale(prev => Math.min(prev + 0.15, 2.0));
   const handleZoomOut = () => setZoomScale(prev => Math.max(prev - 0.15, 0.4));
   const handleResetZoom = () => setZoomScale(1.0);
+  const formatBDT = (amt) => '৳' + Math.round(Number(amt)).toLocaleString('en-IN');
 
-  const treeType = 'investor';
-
-  const buildFullBinaryTree = (memberId) => {
-    if (!memberId) return null;
-    const m = members.find(x => x.memberId === memberId);
-    if (!m) return null;
-
-    const leftKey = treeType === 'buyer' ? 'buyerLeft' : 'investorLeft';
-    const rightKey = treeType === 'buyer' ? 'buyerRight' : 'investorRight';
-
-    return {
-      memberId: m.memberId,
-      name: m.name,
-      phone: m.phone,
-      capitalInvested: m.capitalInvested,
-      left: m[leftKey] ? buildFullBinaryTree(m[leftKey]) : null,
-      right: m[rightKey] ? buildFullBinaryTree(m[rightKey]) : null
-    };
+  const handleSlotClick = (side, parentId, parentName) => {
+    if (unplacedMembers.length === 0) { setNotification({ type: 'error', message: 'No unplaced members.' }); return; }
+    setPlacementSlot({ side, parentId, parentName });
   };
 
-  const parentKey = treeType === 'buyer' ? 'buyerParent' : 'investorParent';
-  let rootMember = members.find(m => m.memberId === 'Plan10-101');
-  if (!rootMember) {
-    rootMember = members.find(m => m[parentKey] === null);
-  }
-  const binaryRootNode = rootMember ? buildFullBinaryTree(rootMember.memberId) : null;
+  const root = useMemo(() => members.find(m => m.memberId === 'Plan10-101'), [members]);
+  const companyLeftId = root ? root[`${leftKey}`] : null;
+  const companyRightId = root ? root[`${rightKey}`] : null;
+  const leftSideMember = companyLeftId ? members.find(m => m.memberId === companyLeftId) : null;
+  const rightSideMember = companyRightId ? members.find(m => m.memberId === companyRightId) : null;
+  const slotLL = leftSideMember ? (members.find(m => m.memberId === leftSideMember[`${leftKey}`])) : null;
+  const slotLR = leftSideMember ? (members.find(m => m.memberId === leftSideMember[`${rightKey}`])) : null;
+  const slotRL = rightSideMember ? (members.find(m => m.memberId === rightSideMember[`${leftKey}`])) : null;
+  const slotRR = rightSideMember ? (members.find(m => m.memberId === rightSideMember[`${rightKey}`])) : null;
 
-  const renderBinaryTreeNode = (node, sideLabel = '') => {
-    if (!node) {
+  const renderMemberCard = (member, slotLabel) => {
+    if (!member || !member[referKey]) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 10px' }}>
-          <div style={{
-            background: 'rgba(30, 41, 59, 0.4)',
-            border: '2px dashed #475569',
-            borderRadius: '12px',
-            padding: '10px 14px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            minWidth: '140px',
-            color: '#64748b'
-          }}>
-            <i className="fa-solid fa-user-plus" style={{ marginBottom: '6px', fontSize: '0.9rem' }}></i>
-            <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Open Slot</span>
-            {sideLabel && <span style={{ fontSize: '0.62rem', background: '#334155', padding: '1px 6px', borderRadius: '4px', marginTop: '4px', color: '#94a3b8' }}>{sideLabel}</span>}
-          </div>
+        <div onClick={() => handleSlotClick(slotLabel.side, slotLabel.parentId, slotLabel.parentName)}
+          title="Click to place member here"
+          style={{ background: 'rgba(30,41,59,0.4)', border: '2px dashed #f59e0b', borderRadius: '12px', padding: '10px 14px', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '120px', cursor: 'pointer', transition: 'all 0.2s' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(245,158,11,0.1)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(30,41,59,0.4)'; }}>
+          <i className="fa-solid fa-user-plus" style={{ marginBottom: '4px', fontSize: '0.8rem', color: '#f59e0b' }}></i>
+          <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#f59e0b' }}>Empty Slot</span>
         </div>
       );
     }
-
-    const hasChildren = node.left || node.right;
-
+    const isSelected = selectedMember && selectedMember.memberId === member.memberId;
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 10px', position: 'relative' }}>
-        <div 
-          onClick={() => setSelectedMember(members.find(x => x.memberId === node.memberId))}
-          style={{
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            border: '2px solid #10b981',
-            borderRadius: '12px',
-            padding: '10px 14px',
-            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.4)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            minWidth: '140px',
-            zIndex: 2,
-            position: 'relative',
-            cursor: 'pointer'
-          }}
-        >
-          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
-            <i className="fa-solid fa-circle-user" style={{ color: '#10b981', fontSize: '1rem' }}></i>
-          </div>
-          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
-            {node.name}
-          </span>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#34d399', fontFamily: 'monospace' }}>
-            {node.memberId}
-          </span>
-          {sideLabel && (
-            <span style={{ fontSize: '0.62rem', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '1px 6px', borderRadius: '4px', marginTop: '4px', color: '#34d399' }}>
-              {sideLabel}
-            </span>
-          )}
+      <div onClick={() => setSelectedMember(member)} className="tree-node-interactive"
+        style={{ background: isSelected ? 'linear-gradient(135deg,#059669 0%,#064e3b 100%)' : 'linear-gradient(135deg,#1e293b 0%,#0f172a 100%)', border: isSelected ? '2px solid #34d399' : '2px solid #10b981', borderRadius: '12px', padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.4)', display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '120px', cursor: 'pointer', transform: isSelected ? 'scale(1.05)' : 'none', transition: 'all 0.2s' }}>
+        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '3px' }}>
+          <i className="fa-solid fa-circle-user" style={{ color: '#10b981', fontSize: '0.85rem' }}></i>
         </div>
-
-        {hasChildren && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginTop: '0px' }}>
-            <div style={{ width: '2px', height: '18px', background: '#475569' }}></div>
-            <div style={{ display: 'flex', position: 'relative', justifyContent: 'center' }}>
-              {/* Connector Line */}
-              <div style={{
-                position: 'absolute',
-                top: '0px',
-                left: '80px',
-                right: '80px',
-                height: '2px',
-                background: '#475569',
-                zIndex: 1
-              }}></div>
-              
-              <div style={{ display: 'flex', gap: '20px', marginTop: '0px', position: 'relative' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <div style={{ width: '2px', height: '10px', background: '#475569' }}></div>
-                  {renderBinaryTreeNode(node.left, 'Left')}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <div style={{ width: '2px', height: '10px', background: '#475569' }}></div>
-                  {renderBinaryTreeNode(node.right, 'Right')}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#fff', textAlign: 'center' }}>{member.name}</span>
+        <span style={{ fontSize: '0.6rem', color: '#34d399', fontFamily: 'monospace' }}>{member.memberId}</span>
       </div>
     );
   };
 
-  // Toggle node expansion
-  const toggleNodeCollapse = (memberId, e) => {
-    e.stopPropagation();
-    setCollapsedNodeIds(prev => {
-      const next = new Set(prev);
-      if (next.has(memberId)) {
-        next.delete(memberId);
-      } else {
-        next.add(memberId);
-      }
-      return next;
-    });
-  };
-
-  const formatBDT = (amt) => '৳' + Math.round(Number(amt)).toLocaleString('en-IN');
-
-  // Find upline sponsor path
-  const findUplineSponsors = useCallback((memberId) => {
-    const path = [];
-    let current = members.find(m => m.memberId === memberId);
-    const seen = new Set();
-
-    while (current && current.referredBy && !seen.has(current.memberId)) {
-      seen.add(current.memberId);
-      const sponsor = members.find(m => m.memberId === current.referredBy);
-      if (sponsor) {
-        path.push(sponsor);
-        current = sponsor;
-      } else {
-        break;
-      }
-    }
-    return path;
-  }, [members]);
-
-  // Find direct referrals for sidebar details
-  const directReferralsList = useMemo(() => {
-    if (!selectedMember) return [];
-    return members.filter(m => m.referredBy === selectedMember.memberId);
-  }, [selectedMember, members]);
-
-  const uplinePath = useMemo(() => {
-    if (!selectedMember) return [];
-    return findUplineSponsors(selectedMember.memberId);
-  }, [selectedMember, findUplineSponsors]);
-
-  // Recursive renderer for nodes
-  const renderTreeNodeHierarchy = (node, level = 0) => {
-    const isCollapsed = collapsedNodeIds.has(node.memberId);
-    const hasChildren = node.children && node.children.length > 0;
-    
-    // Check search highlighting
-    const isMatch = searchQuery && (
-      node.memberId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (node.phone && node.phone.includes(searchQuery))
-    );
-
-    const isSelected = selectedMember && selectedMember.memberId === node.memberId;
-
-    // Node level tag visual
-    const theme = level === 0 
-      ? { bg: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '#475569', iconColor: '#94a3b8', text: '#ffffff', id: '#cbd5e1', icon: 'fa-network-wired', badge: 'SYSTEM ROOT' }
-      : level === 1 
-      ? { bg: 'linear-gradient(135deg, #064e3b 0%, #022c22 100%)', border: '#059669', iconColor: '#34d399', text: '#ffffff', id: '#6ee7b7', icon: 'fa-user-tie', badge: 'L1 DIRECT (6%)' }
-      : level === 2 
-      ? { bg: 'linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%)', border: '#2563eb', iconColor: '#60a5fa', text: '#ffffff', id: '#93c5fd', icon: 'fa-circle-user', badge: 'L2 SPONSOR (0%)' }
-      : level === 3 
-      ? { bg: 'linear-gradient(135deg, #581c87 0%, #0f172a 100%)', border: '#7c3aed', iconColor: '#c084fc', text: '#ffffff', id: '#d8b4fe', icon: 'fa-circle-user', badge: 'L3 SPONSOR (0%)' }
-      : { bg: 'linear-gradient(135deg, #4c1d95 0%, #090514 100%)', border: '#6d28d9', iconColor: '#a78bfa', text: '#cbd5e1', id: '#c084fc', icon: 'fa-users', badge: `L${level} NETWORK (0%)` };
-
-    if (node.memberId === 'SYSTEM') {
-      theme.bg = 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)';
-      theme.border = '#3b82f6';
-      theme.iconColor = '#60a5fa';
-    }
-
+  const renderSlotWithChildren = (member, slotLabel, level = 3) => {
+    const slot = renderMemberCard(member, slotLabel);
+    if (level >= 5) return slot;
     return (
-      <div key={node.memberId} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 14px', position: 'relative' }}>
-        <div 
-          className={`tree-node-interactive ${isSelected ? 'tree-node-selected' : ''} ${isMatch ? 'tree-node-highlighted' : ''}`}
-          onClick={() => {
-            if (node.memberId !== 'SYSTEM') {
-              const fullMember = members.find(m => m.memberId === node.memberId);
-              if (fullMember) setSelectedMember(fullMember);
-            }
-          }}
-          style={{
-            background: theme.bg,
-            border: `2px solid ${theme.border}`,
-            borderRadius: '12px',
-            padding: '10px 14px',
-            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.4)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            minWidth: '150px',
-            zIndex: 2,
-            position: 'relative',
-            borderStyle: isSelected ? 'double' : 'solid'
-          }}
-        >
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px', border: `1px solid ${theme.border}` }}>
-            <i className={`fa-solid ${theme.icon}`} style={{ color: theme.iconColor, fontSize: '0.9rem' }}></i>
-          </div>
-          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }} title={node.name}>
-            {node.name}
-          </span>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: theme.id, fontFamily: 'monospace' }}>
-            {node.memberId}
-          </span>
-          {node.memberId !== 'SYSTEM' && (
-            <span style={{ fontSize: '0.7rem', fontWeight: 600, color: '#34d399', marginTop: '2px' }}>
-              ৳{Math.round(node.capitalInvested).toLocaleString()}
-            </span>
-          )}
-          <span style={{ fontSize: '0.6rem', fontWeight: 700, background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', marginTop: '4px', color: theme.iconColor }}>
-            {theme.badge}
-          </span>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {slot}
+        <div className="tree-connector-vertical" />
+        <div className="tree-connector-horizontal">
+          <div style={{ position: 'absolute', top: '0px', left: '60px', right: '60px', height: '2px', background: '#334155' }}></div>
         </div>
-
-        {hasChildren && (
-          <button 
-            className="toggle-children-btn"
-            onClick={(e) => toggleNodeCollapse(node.memberId, e)}
-            title={isCollapsed ? "Expand branch" : "Collapse branch"}
-          >
-            <i className={`fa-solid ${isCollapsed ? 'fa-plus' : 'fa-minus'}`}></i>
-          </button>
-        )}
-
-        {hasChildren && !isCollapsed && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', marginTop: '0px' }}>
-            <div style={{ width: '2px', height: '18px', background: '#475569' }}></div>
-            <div style={{ display: 'flex', position: 'relative', justifyContent: 'center' }}>
-              {node.children.length > 1 && (
-                <div style={{
-                  position: 'absolute',
-                  top: '0px',
-                  left: '89px',
-                  right: '89px',
-                  height: '2px',
-                  background: '#475569',
-                  zIndex: 1
-                }}></div>
-              )}
-              {node.children.map(child => (
-                <div key={child.memberId} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
-                  <div style={{ width: '2px', height: '18px', background: '#475569' }}></div>
-                  {renderTreeNodeHierarchy(child, level + 1)}
-                </div>
-              ))}
-            </div>
+        <div style={{ display: 'flex', gap: '14px', marginTop: '0px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div className="tree-connector-vertical" />
+            {renderSlotWithChildren(null, { side: 'left', parentId: 'Plan10-101', parentName: 'Company', name: 'L4' }, level + 1)}
           </div>
-        )}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div className="tree-connector-vertical" />
+            {renderSlotWithChildren(null, { side: 'right', parentId: 'Plan10-101', parentName: 'Company', name: 'L4' }, level + 1)}
+          </div>
+        </div>
       </div>
     );
   };
+
+  const filteredForPlacement = useMemo(() => {
+    if (!searchQuery.trim()) return unplacedMembers;
+    const q = searchQuery.toLowerCase().trim();
+    return unplacedMembers.filter(m => (m.name && m.name.toLowerCase().includes(q)) || (m.memberId && m.memberId.toLowerCase().includes(q)) || (m.phone && m.phone.includes(q)));
+  }, [unplacedMembers, searchQuery]);
 
   return (
     <div>
-      {/* Header section */}
+
+
+      {notification && (
+        <div style={{ padding: '12px 20px', backgroundColor: notification.type === 'success' ? '#d1fae5' : '#fef2f2', color: notification.type === 'success' ? '#065f46' : '#991b1b', borderRadius: '8px', marginBottom: '20px', fontWeight: 600 }}>
+          <i className={`fa-solid ${notification.type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation'}`}></i> {notification.message}
+        </div>
+      )}
+
       <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h2>Investor Referral Tree &amp; Sponsorship Network</h2>
-          <p style={{ color: '#64748b' }}>Visualize downlines, sponsor connection maps, and track team volume distribution.</p>
+          <h2>Investor Binary Tree</h2>
+          <p style={{ color: '#64748b' }}>Investor account tree. Click any empty slot to place an unplaced investor.</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <Link href="/admin/members" className="btn-action btn-view">
-            <i className="fa-solid fa-users"></i> Back to Members List
-          </Link>
+        <Link href="/admin/members" className="btn-action btn-view"><i className="fa-solid fa-users"></i> Members</Link>
+      </div>
+
+      {/* Stats Cards - all clickable */}
+      <div className="metrics-grid" style={{ marginBottom: '24px' }}>
+        <div className="metric-card" style={{ cursor: 'pointer' }} onClick={() => handleCardClick('total')}>
+          <div className="metric-info">
+            <h4>Total Investors</h4>
+            <h3 className="metric-number">{stats.total}</h3>
+            <small style={{ color: '#60a5fa' }}>I:{stats.investors} · B:{stats.buyers} · Both:{stats.both}</small>
+          </div>
+          <div className="metric-icon icon-blue"><i className="fa-solid fa-users"></i></div>
+        </div>
+        <div className="metric-card" style={{ cursor: 'pointer' }} onClick={() => handleCardClick('withReferral')}>
+          <div className="metric-info">
+            <h4>In Tree (With Referral)</h4>
+            <h3 className="metric-number" style={{ color: '#10b981' }}>{stats.withReferral}</h3>
+            <small style={{ color: '#34d399' }}>{formatBDT(stats.referralCapital)} capital</small>
+          </div>
+          <div className="metric-icon icon-green"><i className="fa-solid fa-link"></i></div>
+        </div>
+        <div className="metric-card" style={{ cursor: 'pointer' }} onClick={() => handleCardClick('unplaced')}>
+          <div className="metric-info">
+            <h4>Unplaced Investors <i className={`fa-solid ${showUnplaced ? 'fa-chevron-up' : 'fa-chevron-down'}`} style={{ fontSize: '0.7rem', marginLeft: '4px' }}></i></h4>
+            <h3 className="metric-number" style={{ color: '#f59e0b' }}>{stats.withoutReferral}</h3>
+            <small style={{ color: '#f59e0b' }}>{formatBDT(stats.unplacedCapital)} capital</small>
+          </div>
+          <div className="metric-icon icon-amber"><i className="fa-solid fa-user-clock"></i></div>
+        </div>
+        <div className="metric-card" style={{ cursor: 'pointer' }} onClick={() => handleCardClick('payout')}>
+          <div className="metric-info">
+            <h4>Monthly Commitment</h4>
+            <h3 className="metric-number">{formatBDT(stats.totalMonthlyPayout)}</h3>
+            <small style={{ color: '#94a3b8' }}>Depth L{stats.maxDepth}</small>
+          </div>
+          <div className="metric-icon icon-purple"><i className="fa-solid fa-chart-line"></i></div>
         </div>
       </div>
 
-      {/* Network Stats Counter cards */}
-      <div className="metrics-grid">
-        <div className="metric-card">
-          <div className="metric-info">
-            <h4>Total Active Downline Network</h4>
-            <h3 className="metric-number">{globalStats.totalMembers} Members</h3>
+      {/* Unplaced Members Panel */}
+      {showUnplaced && (
+        <div className="unplaced-members-section" style={{ marginBottom: '24px' }}>
+          <div className="unplaced-members-header">
+            <h4 style={{ margin: 0, color: '#fff', fontSize: '0.95rem' }}>Unplaced Investors <span style={{ color: '#f59e0b', fontWeight: 800 }}>({unplacedMembers.length})</span></h4>
           </div>
-          <div className="metric-icon icon-blue">
-            <i className="fa-solid fa-sitemap"></i>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-info">
-            <h4>Combined Network Volume</h4>
-            <h3 className="metric-number">{formatBDT(globalStats.totalCapital)}</h3>
-          </div>
-          <div className="metric-icon icon-green">
-            <i className="fa-solid fa-vault"></i>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-info">
-            <h4>Top Sponsor / Recruiter</h4>
-            <h3 className="metric-number" style={{ fontSize: '1.25rem' }}>{globalStats.topRecruiter.name}</h3>
-            <small style={{ color: '#10b981', fontWeight: 600 }}>{globalStats.topRecruiter.count} Direct Referrals ({globalStats.topRecruiter.memberId})</small>
-          </div>
-          <div className="metric-icon icon-amber">
-            <i className="fa-solid fa-medal"></i>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-info">
-            <h4>Combined Referral Commission</h4>
-            <h3 className="metric-number">{formatBDT(globalStats.totalReferralCommissions)}</h3>
-            <small style={{ color: '#60a5fa', fontWeight: 600 }}>Calculated at Flat 6% Sponsor Rate</small>
-          </div>
-          <div className="metric-icon icon-blue">
-            <i className="fa-solid fa-coins"></i>
-          </div>
-        </div>
-      </div>
-
-      {/* Search and Focus Controls */}
-      <div className="search-bar-wrapper">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--admin-text-muted)', fontSize: '0.9rem' }}>
-          <i className="fa-solid fa-magnifying-glass"></i>
-          <span>Locate:</span>
-        </div>
-        <input 
-          type="text" 
-          placeholder="Search by Member ID, Name, or Phone..." 
-          className="search-input-box" 
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--admin-text-muted)', fontSize: '0.9rem', marginLeft: 'auto' }}>
-          <i className="fa-solid fa-filter"></i>
-          <span>Focus Root:</span>
-        </div>
-        <select 
-          className="select-root-dropdown"
-          value={selectedRootId}
-          onChange={(e) => {
-            setSelectedRootId(e.target.value);
-            setCollapsedNodeIds(new Set()); // Reset collapses
-          }}
-        >
-          <option value="SYSTEM">Whole Network Root</option>
-          {members.map(m => (
-            <option key={m.memberId} value={m.memberId}>
-              {m.memberId} - {m.name}
-            </option>
-          ))}
-        </select>
-
-        {/* Zoom Controls */}
-        <div className="zoom-controls-wrapper">
-          <button 
-            onClick={handleZoomOut} 
-            title="Zoom Out (-)"
-            style={{ background: '#1e293b', border: '1px solid #334155', color: '#ffffff', borderRadius: '6px', width: '32px', height: '32px', cursor: 'pointer', fontWeight: 700 }}
-          >
-            <i className="fa-solid fa-magnifying-glass-minus"></i>
-          </button>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#34d399', alignSelf: 'center', background: '#0f172a', padding: '6px 10px', borderRadius: '6px', border: '1px solid #334155', minWidth: '46px', textAlign: 'center' }}>
-            {Math.round(zoomScale * 100)}%
-          </span>
-          <button 
-            onClick={handleZoomIn} 
-            title="Zoom In (+)"
-            style={{ background: '#1e293b', border: '1px solid #334155', color: '#ffffff', borderRadius: '6px', width: '32px', height: '32px', cursor: 'pointer', fontWeight: 700 }}
-          >
-            <i className="fa-solid fa-magnifying-glass-plus"></i>
-          </button>
-          <button 
-            onClick={handleResetZoom} 
-            title="Reset Zoom (100%)"
-            style={{ background: '#10b981', border: 'none', color: '#ffffff', borderRadius: '6px', padding: '0 12px', height: '32px', cursor: 'pointer', fontWeight: 700 }}
-          >
-            <i className="fa-solid fa-rotate-left"></i> Reset
-          </button>
-        </div>
-      </div>
-
-      {/* Main visual tree view and details layout */}
-      {loading ? (
-        <div className="card-table-container" style={{ padding: '40px', textAlign: 'center' }}>
-          <p>Loading database referral structures...</p>
-        </div>
-      ) : members.length === 0 ? (
-        <div className="card-table-container" style={{ padding: '40px', textAlign: 'center' }}>
-          <p>No verified members found in the network store.</p>
-        </div>
-      ) : (
-        <div className="tree-page-layout">
-          {/* Main Visualizer Area */}
-          <div className="tree-main-content">
-
-
-            <div className="tree-viewport-card">
-              {/* Scrollable scale canvas container */}
-              <div style={{ 
-                transform: `scale(${zoomScale})`, 
-                transformOrigin: 'top center',
-                transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                display: 'inline-flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                minWidth: '100%',
-                width: 'max-content',
-                padding: '10px 0'
-              }}>
-                {binaryRootNode ? (
-                  renderBinaryTreeNode(binaryRootNode)
-                ) : (
-                  <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.9rem', padding: '40px 0' }}>
-                    No tree placement record found yet for the selected mode.
+          <div className="unplaced-members-body">
+            {unplacedMembers.length === 0 ? <p style={{ color: '#64748b', textAlign: 'center', padding: '12px' }}>All investors are placed.</p>
+            : unplacedMembers.map(m => (
+              <div key={m.memberId} style={{ borderBottom: '1px solid #334155', padding: '10px 14px', cursor: 'pointer' }}
+                onClick={() => setExpandedUnplaced(expandedUnplaced === m.memberId ? null : m.memberId)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong style={{ color: '#fff', fontSize: '0.85rem' }}>{m.name}</strong>
+                    <span style={{ fontSize: '0.72rem', color: '#94a3b8', marginLeft: '8px' }}>{m.memberId} | {m.phone}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ color: '#34d399', fontWeight: 600, fontSize: '0.8rem' }}>{formatBDT(m.capitalInvested)}</span>
+                    <i className={`fa-solid ${expandedUnplaced === m.memberId ? 'fa-chevron-up' : 'fa-chevron-down'}`} style={{ color: '#64748b', fontSize: '0.75rem' }}></i>
+                  </div>
+                </div>
+                {expandedUnplaced === m.memberId && (
+                  <div style={{ marginTop: '10px', padding: '12px', background: '#0f172a', borderRadius: '8px', border: '1px solid #334155' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.8rem', marginBottom: '12px' }}>
+                      <div><strong style={{ color: '#94a3b8' }}>NID:</strong> <span style={{ color: '#fff' }}>{m.nid || 'N/A'}</span></div>
+                      <div><strong style={{ color: '#94a3b8' }}>Join:</strong> <span style={{ color: '#fff' }}>{m.joinDate}</span></div>
+                      <div><strong style={{ color: '#94a3b8' }}>Status:</strong> <span style={{ color: '#34d399' }}>{m.status}</span></div>
+                      <div><strong style={{ color: '#94a3b8' }}>Terms:</strong> <span style={{ color: '#fff' }}>{m.termMonths || 0}mo</span></div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button className="placement-btn-left" onClick={(e) => { e.stopPropagation(); handlePlaceMember(m.memberId, 'left', 'Plan10-101'); }} disabled={placingId === m.memberId}>
+                        {placingId === m.memberId ? <i className="fa-solid fa-spinner fa-spin"></i> : <><i className="fa-solid fa-arrow-left"></i> Place in Tree</>}
+                      </button>
+                    </div>
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Zoom Controls */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '16px' }}>
+        <button onClick={handleZoomOut} style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', width: '32px', height: '32px', cursor: 'pointer', color: '#fff' }}><i className="fa-solid fa-magnifying-glass-minus"></i></button>
+        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#34d399', background: '#0f172a', padding: '6px 10px', borderRadius: '6px', border: '1px solid #334155', minWidth: '46px', textAlign: 'center' }}>{Math.round(zoomScale * 100)}%</span>
+        <button onClick={handleZoomIn} style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '6px', width: '32px', height: '32px', cursor: 'pointer', color: '#fff' }}><i className="fa-solid fa-magnifying-glass-plus"></i></button>
+        <button onClick={handleResetZoom} style={{ background: '#10b981', border: 'none', borderRadius: '6px', padding: '0 12px', height: '32px', cursor: 'pointer', color: '#fff', fontWeight: 700 }}><i className="fa-solid fa-rotate-left"></i> Reset</button>
+      </div>
+
+      {/* Tree */}
+      {loading ? <div className="card-table-container" style={{ padding: '40px', textAlign: 'center' }}><p>Loading...</p></div>
+      : !root ? <div className="card-table-container" style={{ padding: '40px', textAlign: 'center' }}><i className="fa-solid fa-triangle-exclamation" style={{ fontSize: '2rem', color: '#f59e0b', marginBottom: '12px' }}></i><p style={{ color: '#94a3b8' }}>Company root not found.</p></div>
+      : (
+        <div className="tree-page-layout">
+          <div className="tree-main-content">
+            <div className="tree-viewport-card">
+              <div style={{ transform: `scale(${zoomScale})`, transformOrigin: 'top center', transition: 'transform 0.2s', display: 'flex', justifyContent: 'center', padding: '30px 0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div className="company-root-node" style={{ padding: '10px 16px' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(59,130,246,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '4px' }}>
+                      <i className="fa-solid fa-building" style={{ color: '#60a5fa', fontSize: '1rem' }}></i>
+                    </div>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff' }}>Plan10bd</span>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#60a5fa' }}>Company Root</span>
+                  </div>
+                  <div className="tree-connector-vertical" />
+                  <div className="tree-connector-horizontal">
+                    <div style={{ position: 'absolute', top: '0px', left: '70px', right: '70px', height: '2px', background: '#475569' }}></div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '30px', marginTop: '0px' }}>
+                    <div className="tree-side-branch">
+                      <div className="tree-connector-vertical" />
+                      <div className="company-side-node" style={{ padding: '8px 14px' }}>
+                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'rgba(124,58,237,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '3px' }}>
+                          <i className="fa-solid fa-flag" style={{ color: '#c084fc', fontSize: '0.8rem' }}></i>
+                        </div>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#fff' }}>Company</span>
+                        <span style={{ fontSize: '0.62rem', color: '#c084fc' }}>(Left)</span>
+                      </div>
+                      <div className="tree-connector-vertical" />
+                      <div className="tree-connector-horizontal">
+                        <div style={{ position: 'absolute', top: '0px', left: '58px', right: '58px', height: '2px', background: '#475569' }}></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '14px', marginTop: '0px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <div className="tree-connector-vertical" />
+                          {renderSlotWithChildren(slotLL, { side: 'left', parentId: companyLeftId || 'Plan10-101', parentName: 'Company (Left)', name: 'L3' })}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <div className="tree-connector-vertical" />
+                          {renderSlotWithChildren(slotLR, { side: 'right', parentId: companyLeftId || 'Plan10-101', parentName: 'Company (Left)', name: 'L3' })}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="tree-side-branch">
+                      <div className="tree-connector-vertical" />
+                      <div className="company-side-node" style={{ padding: '8px 14px' }}>
+                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'rgba(124,58,237,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '3px' }}>
+                          <i className="fa-solid fa-flag" style={{ color: '#c084fc', fontSize: '0.8rem' }}></i>
+                        </div>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#fff' }}>Company</span>
+                        <span style={{ fontSize: '0.62rem', color: '#c084fc' }}>(Right)</span>
+                      </div>
+                      <div className="tree-connector-vertical" />
+                      <div className="tree-connector-horizontal">
+                        <div style={{ position: 'absolute', top: '0px', left: '58px', right: '58px', height: '2px', background: '#475569' }}></div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '14px', marginTop: '0px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <div className="tree-connector-vertical" />
+                          {renderSlotWithChildren(slotRL, { side: 'left', parentId: companyRightId || 'Plan10-101', parentName: 'Company (Right)', name: 'L3' })}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          <div className="tree-connector-vertical" />
+                          {renderSlotWithChildren(slotRR, { side: 'right', parentId: companyRightId || 'Plan10-101', parentName: 'Company (Right)', name: 'L3' })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Details Sidebar panel */}
+          {/* Sidebar */}
           <div className="tree-sidebar-details">
             {!selectedMember ? (
-              <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--admin-text-muted)' }}>
+              <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94a3b8' }}>
                 <i className="fa-solid fa-circle-info" style={{ fontSize: '2.5rem', marginBottom: '16px', color: '#3b82f6' }}></i>
-                <h4>Inspect Member Downline</h4>
-                <p style={{ fontSize: '0.85rem', marginTop: '8px', lineHeight: '1.4' }}>
-                  Click on any member card in the visual tree layout to check sponsor details, network volume and downline stats.
-                </p>
+                <h4>Inspect Investor</h4>
+                <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>Click a member or <strong style={{ color: '#f59e0b' }}>Empty Slot</strong>.</p>
               </div>
             ) : (
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <span style={{ fontSize: '0.72rem', background: '#2563eb', padding: '2px 8px', borderRadius: '10px', color: '#fff', fontWeight: 700 }}>
-                    MEMBER PROFILE DETAILS
-                  </span>
-                  <button 
-                    onClick={() => setSelectedMember(null)}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--admin-text-muted)', cursor: 'pointer', fontSize: '1rem' }}
-                    title="Close Panel"
-                  >
-                    <i className="fa-solid fa-xmark"></i>
-                  </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <span style={{ fontSize: '0.72rem', background: '#2563eb', padding: '2px 8px', borderRadius: '10px', color: '#fff', fontWeight: 700 }}>INVESTOR NODE</span>
+                  <button onClick={() => setSelectedMember(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1rem' }}><i className="fa-solid fa-xmark"></i></button>
                 </div>
-
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '1.25rem', color: '#fff' }}>{selectedMember.name}</h3>
-                <code style={{ fontSize: '0.85rem', color: '#60a5fa', display: 'block', marginBottom: '12px' }}>{selectedMember.memberId}</code>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', background: '#0f172a', borderRadius: '8px', border: '1px solid var(--admin-border-color)', marginBottom: '16px', fontSize: '0.85rem' }}>
-                  <div><strong>Phone:</strong> {selectedMember.phone}</div>
-                  <div><strong>NID:</strong> {selectedMember.nid || 'N/A'}</div>
-                  <div><strong>Joining Date:</strong> {selectedMember.joinDate}</div>
-                  <div><strong>Capital Balance:</strong> <strong style={{ color: '#34d399' }}>{formatBDT(selectedMember.capitalInvested)}</strong></div>
+                <h3 style={{ margin: '0 0 2px 0', fontSize: '1.25rem', color: '#fff' }}>{selectedMember.name}</h3>
+                <code style={{ fontSize: '0.85rem', color: '#60a5fa' }}>{selectedMember.memberId}</code>
+                <div style={{ background: '#0f172a', borderRadius: '8px', border: '1px solid #334155', padding: '12px', fontSize: '0.85rem', margin: '12px 0' }}>
+                  <div><strong style={{ color: '#94a3b8' }}>Phone:</strong> <span style={{ color: '#fff' }}>{selectedMember.phone}</span></div>
+                  <div><strong style={{ color: '#94a3b8' }}>Capital:</strong> <strong style={{ color: '#34d399' }}>{formatBDT(selectedMember.capitalInvested)}</strong></div>
+                  <div><strong style={{ color: '#94a3b8' }}>Referral:</strong> <span style={{ color: '#60a5fa' }}>{selectedMember[referKey] || 'None'}</span></div>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-                {/* Upline information */}
-                <h4 style={{ fontSize: '0.9rem', color: 'var(--admin-text-muted)', borderBottom: '1px solid var(--admin-border-color)', paddingBottom: '6px', margin: '16px 0 8px 0' }}>
-                  Sponsorship Upline (Sponsors)
-                </h4>
-                {selectedMember.referredBy ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px dashed rgba(59, 130, 246, 0.4)', borderRadius: '8px', padding: '10px', fontSize: '0.85rem' }}>
-                      <label style={{ fontSize: '0.68rem', textTransform: 'uppercase', color: '#60a5fa', fontWeight: 700, display: 'block' }}>Direct Sponsor</label>
-                      <strong style={{ color: '#fff' }}>
-                        {members.find(m => m.memberId === selectedMember.referredBy)?.name || selectedMember.referredBy}
-                      </strong>
-                      <span style={{ color: 'var(--admin-text-muted)', fontSize: '0.78rem', marginLeft: '6px' }}>
-                        ({selectedMember.referredBy})
-                      </span>
-                    </div>
-
-                    {uplinePath.length > 1 && (
-                      <div style={{ paddingLeft: '12px', borderLeft: '2px dotted #334155', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {uplinePath.slice(1).map((up, i) => (
-                          <div key={up.memberId} style={{ fontSize: '0.78rem', color: 'var(--admin-text-muted)' }}>
-                            <i className="fa-solid fa-turn-up" style={{ transform: 'rotate(90deg)', marginRight: '6px', fontSize: '0.7rem' }}></i>
-                            Gen {i + 2}: {up.name} ({up.memberId})
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.82rem', fontStyle: 'italic', padding: '6px 0' }}>
-                    Joined directly. No upline sponsor.
-                  </div>
-                )}
-
-                {/* Downline statistics */}
-                <h4 style={{ fontSize: '0.9rem', color: 'var(--admin-text-muted)', borderBottom: '1px solid var(--admin-border-color)', paddingBottom: '6px', margin: '20px 0 8px 0' }}>
-                  Sub-network / Downline Statistics
-                </h4>
-                {downlineStats[selectedMember.memberId] ? (
-                  <div>
-                    <div className="stats-mini-grid">
-                      <div className="stat-mini-card">
-                        <label>Direct (L1)</label>
-                        <span>{downlineStats[selectedMember.memberId].l1} Members</span>
-                      </div>
-                      <div className="stat-mini-card">
-                        <label>Total Network</label>
-                        <span>{downlineStats[selectedMember.memberId].total} Members</span>
-                      </div>
-                      <div className="stat-mini-card">
-                        <label>L2 / L3 Count</label>
-                        <span>{downlineStats[selectedMember.memberId].l2} / {downlineStats[selectedMember.memberId].l3}</span>
-                      </div>
-                      <div className="stat-mini-card">
-                        <label>Sub Volume</label>
-                        <span style={{ color: '#34d399' }}>{formatBDT(downlineStats[selectedMember.memberId].volume)}</span>
-                      </div>
-                    </div>
-
-                    <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '10px 12px', borderRadius: '8px', marginTop: '12px', fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: 'var(--admin-text-muted)' }}>Earned L1 Referral Commission:</span>
-                      <strong style={{ color: '#10b981' }}>{formatBDT(directReferralsList.reduce((sum, ref) => sum + (ref.capitalInvested || 0), 0) * 0.06)} BDT (6%)</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <p>Calculating downline stats...</p>
-                )}
-
-                {/* Direct Referrals List */}
-                <h4 style={{ fontSize: '0.9rem', color: 'var(--admin-text-muted)', borderBottom: '1px solid var(--admin-border-color)', paddingBottom: '6px', margin: '20px 0 8px 0' }}>
-                  Direct Referrals ({directReferralsList.length})
-                </h4>
-                {directReferralsList.length === 0 ? (
-                  <div style={{ color: 'var(--admin-text-muted)', fontSize: '0.82rem', fontStyle: 'italic', padding: '6px 0' }}>
-                    No direct referrals yet.
-                  </div>
-                ) : (
-                  <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px', paddingRight: '4px' }}>
-                    {directReferralsList.map(ref => (
-                      <div 
-                        key={ref.memberId} 
-                        onClick={() => setSelectedMember(ref)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', transition: 'all 0.15s ease' }}
-                        title="Click to view details"
-                      >
-                        <div>
-                          <strong style={{ color: '#fff', display: 'block' }}>{ref.name}</strong>
-                          <span style={{ color: 'var(--admin-text-muted)', fontSize: '0.72rem' }}>{ref.memberId}</span>
-                        </div>
-                        <strong style={{ color: '#34d399' }}>{formatBDT(ref.capitalInvested)}</strong>
+      {/* Placement Modal */}
+      {placementSlot && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.85)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '20px' }}>
+          <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '16px', width: '100%', maxWidth: '520px', boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem' }}><i className="fa-solid fa-user-plus" style={{ color: '#f59e0b', marginRight: '8px' }}></i> Place Investor</h3>
+              <button onClick={() => { setPlacementSlot(null); setSearchQuery(''); }} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.25rem' }}><i className="fa-solid fa-xmark"></i></button>
+            </div>
+            <div style={{ padding: '20px 24px', maxHeight: '420px', overflowY: 'auto' }}>
+              {unplacedMembers.length === 0 ? <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>No unplaced investors.</p>
+              : (
+                <>
+                  <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', color: '#fff', outline: 'none', fontSize: '0.85rem', marginBottom: '16px', boxSizing: 'border-box' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {filteredForPlacement.map(m => (
+                      <div key={m.memberId} onClick={() => !placingId && handlePlaceMember(m.memberId, placementSlot.side, placementSlot.parentId)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', cursor: placingId === m.memberId ? 'not-allowed' : 'pointer', opacity: placingId ? 0.6 : 1 }}
+                        onMouseEnter={(e) => { if (!placingId) { e.currentTarget.style.borderColor = '#10b981'; e.currentTarget.style.background = 'rgba(16,185,129,0.05)'; } }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#334155'; e.currentTarget.style.background = '#0f172a'; }}>
+                        <div><strong style={{ color: '#fff', fontSize: '0.85rem' }}>{m.name}</strong><span style={{ fontSize: '0.72rem', color: '#94a3b8' }}> {m.memberId} | {m.phone}</span></div>
+                        {placingId === m.memberId ? <i className="fa-solid fa-spinner fa-spin" style={{ color: '#f59e0b' }}></i> : <i className="fa-solid fa-arrow-right" style={{ color: '#10b981' }}></i>}
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            )}
+                </>
+              )}
+            </div>
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #334155', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => { setPlacementSlot(null); setSearchQuery(''); }} style={{ padding: '8px 20px', background: '#334155', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+            </div>
           </div>
         </div>
       )}

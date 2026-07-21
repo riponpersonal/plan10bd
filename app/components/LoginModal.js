@@ -38,7 +38,9 @@ export default function LoginModal({ isOpen, onClose, onSwitchToApply, onLoginSu
         const userObj = {
           name: data.name,
           username: data.username,
-          role: data.role
+          role: data.role,
+          publicId: data.publicId || null,
+          siblingAccounts: data.siblingAccounts || []
         };
         showToast && showToast(data.message, 'success');
         handleClose();

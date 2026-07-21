@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDataStore, addInquiry, deleteInquiry } from '@/app/lib/dataStore';
 import { requireAdmin } from '@/app/lib/session';
+import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
+import { validateInquiry, sanitizeObject } from '@/app/lib/validate';
 
 export async function GET(request) {
   // ✅ SECURITY FIX: Require admin session (was completely public before!)
@@ -13,10 +15,25 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const body = await request.json();
+    // ✅ SECURITY: Require same-origin CSRF check
+    if (!validateOrigin(request)) return csrfDenied();
+
+    const rawBody = await request.json();
+    const body = sanitizeObject(rawBody);
+
+    // Validate input
+    const validation = validateInquiry(body);
+    if (!validation.valid) {
+      return NextResponse.json(
+        { success: false, message: validation.errors.join(' ') },
+        { status: 400 }
+      );
+    }
+
     const newInq = await addInquiry(body);
     return NextResponse.json({ success: true, inquiry: newInq, message: 'Inquiry sent successfully.' });
   } catch (err) {
+    console.error('Inquiry submission error:', err);
     return NextResponse.json({ success: false, message: 'Failed to send inquiry.' }, { status: 500 });
   }
 }

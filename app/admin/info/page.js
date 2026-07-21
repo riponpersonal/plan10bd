@@ -101,11 +101,9 @@ export default function AdminInfoPage() {
   };
 
   const handleCopyToken = () => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText('SYS-ADM-AUTH-KEY-9948-P10BD');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    // Token copy removed — hardcoded tokens are a security risk
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleExportData = async () => {
@@ -293,8 +291,8 @@ export default function AdminInfoPage() {
       <div className="metrics-grid" style={{ marginBottom: '30px' }}>
         <div className="metric-card">
           <div className="metric-info">
-            <h4>Security Clearance</h4>
-            <h3 className="metric-number" style={{ fontSize: '1.2rem', color: '#60a5fa' }}>Tier-1 Master Control</h3>
+            <h4>Admin Level</h4>
+            <h3 className="metric-number" style={{ fontSize: '1.2rem', color: '#60a5fa' }}>Full Access</h3>
           </div>
           <div className="metric-icon icon-blue">
             <i className="fa-solid fa-key"></i>
@@ -303,8 +301,8 @@ export default function AdminInfoPage() {
 
         <div className="metric-card">
           <div className="metric-info">
-            <h4>Two-Factor Auth</h4>
-            <h3 className="metric-number" style={{ fontSize: '1.2rem', color: '#34d399' }}>Hardware 2FA Enabled</h3>
+            <h4>Session</h4>
+            <h3 className="metric-number" style={{ fontSize: '1.2rem', color: '#34d399' }}>Authenticated</h3>
           </div>
           <div className="metric-icon icon-green">
             <i className="fa-solid fa-lock"></i>
@@ -313,8 +311,8 @@ export default function AdminInfoPage() {
 
         <div className="metric-card">
           <div className="metric-info">
-            <h4>System Authority</h4>
-            <h3 className="metric-number" style={{ fontSize: '1.2rem', color: '#fbbf24' }}>Full Financial Override</h3>
+            <h4>System Role</h4>
+            <h3 className="metric-number" style={{ fontSize: '1.2rem', color: '#fbbf24' }}>Administrator</h3>
           </div>
           <div className="metric-icon icon-amber">
             <i className="fa-solid fa-gavel"></i>

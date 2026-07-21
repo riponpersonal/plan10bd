@@ -45,8 +45,7 @@ export default function AdminPayoutsPage() {
     if (!confirm(`Are you sure you want to permanently delete payout record ${id}?`)) return;
     try {
       const res = await fetch(`/api/payouts?id=${id}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-role': 'ADMIN' }
+        method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {

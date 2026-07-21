@@ -19,6 +19,10 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Username and new password are required.' }, { status: 400 });
     }
 
+    if (newPassword.length < 8) {
+      return NextResponse.json({ success: false, message: 'Password must be at least 8 characters long.' }, { status: 400 });
+    }
+
     const success = await updateUserPassword(username, newPassword);
     if (!success) {
       return NextResponse.json({ success: false, message: 'User not found.' }, { status: 404 });

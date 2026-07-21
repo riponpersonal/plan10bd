@@ -117,9 +117,9 @@ export default function AdminLayout({ children }) {
     { label: 'Investor Applications', href: '/admin/applications', icon: 'fa-file-contract', badge: pendingBadge },
     { label: 'Buyer Applications', href: '/admin/buyer-applications', icon: 'fa-file-signature', badge: pendingBuyerBadge },
     { label: 'Active Members', href: '/admin/members', icon: 'fa-users' },
-    { label: 'Investor Referral Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
+    { label: 'Investor Binary Tree', href: '/admin/referrals', icon: 'fa-sitemap' },
     { label: 'Referral Commissions', href: '/admin/referrals/commissions', icon: 'fa-gift' },
-    { label: 'Products Selling Tree', href: '/admin/products-tree', icon: 'fa-diagram-project' },
+    { label: 'Buyer Binary Tree', href: '/admin/products-tree', icon: 'fa-diagram-project' },
     { label: 'Monthly Payouts', href: '/admin/payouts', icon: 'fa-hand-holding-dollar' },
     { label: 'Withdrawals', href: '/admin/withdrawals', icon: 'fa-money-bill-transfer', badge: pendingWithdrawalsBadge },
     { label: 'Products & Sectors', href: '/admin/products', icon: 'fa-boxes-packing' },
@@ -234,7 +234,9 @@ export default function AdminLayout({ children }) {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: 'logout' })
                       });
-                    } catch (e) {}
+                    } catch (e) {
+                      console.warn('Logout API call failed, clearing local state anyway:', e);
+                    }
                     localStorage.removeItem('plan10_user');
                     window.location.href = '/';
                   }}

@@ -55,13 +55,11 @@ export async function POST(request) {
     if (!user) {
       // Record failed attempt for rate limiting
       recordFailedAttempt(ip);
-      const updatedCheck = checkRateLimit(ip);
-      const attemptsLeft = updatedCheck.attemptsLeft;
 
       return NextResponse.json(
         {
           success: false,
-          message: `Invalid credentials. Please verify username and password.${attemptsLeft > 0 && attemptsLeft <= 2 ? ` (${attemptsLeft} attempt${attemptsLeft === 1 ? '' : 's'} remaining before temporary lockout)` : ''}`
+          message: 'Invalid credentials. Please verify username and password.'
         },
         { status: 401 }
       );
@@ -80,6 +78,8 @@ export async function POST(request) {
         role: 'ADMIN',
         username: user.username,
         name: user.name,
+        publicId: user.publicId || null,
+        siblingAccounts: user.siblingAccounts || [],
         redirectUrl: '/admin',
         message: 'Welcome Corporate Admin! Redirecting to Control Panel...'
       });
@@ -127,6 +127,8 @@ export async function POST(request) {
       role: 'USER',
       username: user.username,
       name: user.name,
+      publicId: user.publicId || null,
+      siblingAccounts: user.siblingAccounts || [],
       redirectUrl: '/dashboard',
       message: `Welcome back, ${user.name}! Opening your User Dashboard...`
     });

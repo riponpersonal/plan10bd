@@ -30,8 +30,7 @@ export default function AdminInquiriesPage() {
     if (!confirm(`Are you sure you want to permanently delete inquiry ${id}?`)) return;
     try {
       const res = await fetch(`/api/inquiries?id=${id}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-role': 'ADMIN' }
+        method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {

@@ -11,6 +11,7 @@ export default function UserDashboardPage() {
   const setUser = context ? context.setUser : () => {};
   const roleProfile = context ? context.roleProfile : 'INVESTOR';
   const setRoleProfile = context ? context.setRoleProfile : () => {};
+  const setAccounts = context ? context.setAccounts : () => {};
 
   const [loading, setLoading] = useState(true);
   const [dashData, setDashData] = useState(null);
@@ -112,6 +113,9 @@ export default function UserDashboardPage() {
         const result = await res.json();
         if (result.success) {
           setDashData(result.data);
+          if (result.data && result.data.accounts) {
+            setAccounts(result.data.accounts);
+          }
           if (result.data && result.data.roleProfile) {
             setRoleProfile(result.data.roleProfile);
           }
@@ -732,15 +736,16 @@ export default function UserDashboardPage() {
     }
 
     const hasChildren = node.left || node.right;
+    const isCompanyRoot = node.memberId === 'Plan10-101';
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '0 10px', position: 'relative' }}>
         <div style={{
-          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-          border: '2px solid #10b981',
+          background: isCompanyRoot ? 'linear-gradient(135deg, #1d4ed8 0%, #0f172a 100%)' : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+          border: isCompanyRoot ? '2px solid #3b82f6' : '2px solid #10b981',
           borderRadius: '12px',
           padding: '10px 14px',
-          boxShadow: '0 6px 16px rgba(0, 0, 0, 0.4)',
+          boxShadow: isCompanyRoot ? '0 6px 20px rgba(59, 130, 246, 0.3)' : '0 6px 16px rgba(0, 0, 0, 0.4)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -748,14 +753,14 @@ export default function UserDashboardPage() {
           zIndex: 2,
           position: 'relative'
         }}>
-          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
-            <i className="fa-solid fa-circle-user" style={{ color: '#10b981', fontSize: '1rem' }}></i>
+          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isCompanyRoot ? 'rgba(59, 130, 246, 0.2)' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '6px' }}>
+            <i className={`fa-solid ${isCompanyRoot ? 'fa-building' : 'fa-circle-user'}`} style={{ color: isCompanyRoot ? '#60a5fa' : '#10b981', fontSize: '1rem' }}></i>
           </div>
           <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
-            {node.name}
+            {isCompanyRoot ? 'Plan10bd' : node.name}
           </span>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#34d399', fontFamily: 'monospace' }}>
-            {node.memberId}
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: isCompanyRoot ? '#60a5fa' : '#34d399', fontFamily: 'monospace' }}>
+            {isCompanyRoot ? 'Company Root' : node.memberId}
           </span>
           {sideLabel && (
             <span style={{ fontSize: '0.62rem', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '1px 6px', borderRadius: '4px', marginTop: '4px', color: '#34d399' }}>

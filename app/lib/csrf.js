@@ -22,25 +22,38 @@ export function validateOrigin(request) {
 
   if (!host) return false;
 
-  const getDomain = (urlStr) => {
+  const isAllowed = (urlStr) => {
+    if (!urlStr) return false;
     try {
       const url = new URL(urlStr);
-      return url.host; // Returns hostname:port (e.g. "localhost:3000" or "newplan10bdpvtltd.com")
+      const domain = url.host.toLowerCase();
+      const hostClean = host.toLowerCase();
+
+      // Check same-origin (direct match with Host header)
+      if (domain === hostClean) return true;
+
+      // Fall back to whitelisted ALLOWED_ORIGINS
+      return ALLOWED_ORIGINS.some((allowed) => {
+        try {
+          const allowedHost = new URL(allowed).host.toLowerCase();
+          return domain === allowedHost;
+        } catch {
+          return false;
+        }
+      });
     } catch {
-      return null;
+      return false;
     }
   };
 
   // Check Origin header first (most reliable)
   if (origin) {
-    const originDomain = getDomain(origin);
-    return originDomain === host;
+    return isAllowed(origin);
   }
 
   // Fall back to Referer header
   if (referer) {
-    const refererDomain = getDomain(referer);
-    return refererDomain === host;
+    return isAllowed(referer);
   }
 
   return false;

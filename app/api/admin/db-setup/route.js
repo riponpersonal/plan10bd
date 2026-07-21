@@ -3,18 +3,23 @@ import path from 'path';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/dataStore';
 import { hashPassword, needsRehash } from '@/app/lib/crypto';
-
-// Use the secret key configured in environment, with default fallback for dev only
-const SECRET_KEY = process.env.PLAN10_SECRET_KEY || 'plan10-bd-default-secret-dev-only-2026';
+import { requireAdmin } from '@/app/lib/session';
+import { validateOrigin, csrfDenied } from '@/app/lib/csrf';
 
 export async function GET(request) {
+  // ✅ SECURITY: Validate request origin first to protect against CSRF
+  if (!validateOrigin(request)) return csrfDenied();
+
   const { searchParams } = new URL(request.url);
   const providedSecret = searchParams.get('secret');
+  const secretKey = process.env.PLAN10_SECRET_KEY;
 
-  // Security Check: Guard the setup endpoint
-  if (!providedSecret || providedSecret !== SECRET_KEY) {
+  // Allow access via a valid admin session OR a matching PLAN10_SECRET_KEY (min 16 chars) for bootstrapping
+  const isSecretValid = secretKey && secretKey.length >= 16 && providedSecret === secretKey;
+
+  if (!requireAdmin(request) && !isSecretValid) {
     return NextResponse.json(
-      { success: false, message: 'Forbidden: Invalid secret key.' },
+      { success: false, message: 'Unauthorized: Admin access or valid bootstrap secret key required.' },
       { status: 403 }
     );
   }
@@ -65,6 +70,26 @@ export async function GET(request) {
           error: err.message
         });
       }
+    }
+
+    // ✅ Run migrations to ensure publicId columns exist
+    try {
+      await prisma.$executeRawUnsafe("ALTER TABLE `Member` ADD COLUMN `publicId` VARCHAR(191) NULL UNIQUE");
+      console.log("[DB SETUP] Added publicId column to Member table.");
+    } catch (e) {
+      console.log("[DB SETUP] Member.publicId alteration skipped (already exists or failed):", e.message);
+    }
+    try {
+      await prisma.$executeRawUnsafe("ALTER TABLE `User` ADD COLUMN `publicId` VARCHAR(191) NULL UNIQUE");
+      console.log("[DB SETUP] Added publicId column to User table.");
+    } catch (e) {
+      console.log("[DB SETUP] User.publicId alteration skipped (already exists or failed):", e.message);
+    }
+    try {
+      await prisma.$executeRawUnsafe("ALTER TABLE `Member` ADD COLUMN `category` VARCHAR(20) NULL");
+      console.log("[DB SETUP] Added category column to Member table.");
+    } catch (e) {
+      console.log("[DB SETUP] Member.category alteration skipped (already exists or failed):", e.message);
     }
 
     // 2. Data Migration from dataStore.json
@@ -356,6 +381,43 @@ export async function GET(request) {
     } else {
       report.dataMigration.status = 'No dataStore.json file found for migration.';
     }
+
+    // ✅ Backfill publicId for existing members/users that don't have one
+    const membersToMigrate = await prisma.member.findMany({
+      where: {
+        OR: [
+          { publicId: null },
+          { publicId: '' }
+        ]
+      }
+    });
+    let migratedMembersCount = 0;
+    for (const m of membersToMigrate) {
+      let isUnique = false;
+      let candidate = '';
+      let attempts = 0;
+      while (!isUnique && attempts < 100) {
+        candidate = String(Math.floor(1000000 + Math.random() * 9000000));
+        const checkM = await prisma.member.findFirst({ where: { publicId: candidate } });
+        const checkU = await prisma.user.findFirst({ where: { publicId: candidate } });
+        if (!checkM && !checkU) {
+          isUnique = true;
+        }
+        attempts++;
+      }
+      if (isUnique) {
+        await prisma.member.update({
+          where: { memberId: m.memberId },
+          data: { publicId: candidate }
+        });
+        await prisma.user.updateMany({
+          where: { username: m.memberId },
+          data: { publicId: candidate }
+        });
+        migratedMembersCount++;
+      }
+    }
+    report.publicIdMigration = `${migratedMembersCount} existing member/user accounts assigned public IDs.`;
 
     return NextResponse.json({
       success: true,

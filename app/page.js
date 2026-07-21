@@ -735,7 +735,8 @@ export default function Home() {
                     showToast(data.message || 'Failed to submit inquiry.', 'error');
                   }
                 } catch (err) {
-                  showToast('Your inquiry has been sent to Plan-10 management team.', 'success');
+                  console.error('Inquiry submission error:', err);
+                  showToast('Failed to submit inquiry. Please check your connection and try again.', 'error');
                 }
               }}>
                 <div className="form-group mb-3">
@@ -890,6 +891,12 @@ export default function Home() {
         onLoginSuccess={(userObj, redirectUrl) => {
           setCurrentUser(userObj);
           localStorage.setItem('plan10_user', JSON.stringify(userObj));
+          // Save sibling accounts for account switching
+          if (userObj.siblingAccounts && userObj.siblingAccounts.length > 0) {
+            localStorage.setItem('plan10_sibling_accounts', JSON.stringify(userObj.siblingAccounts));
+          } else {
+            localStorage.removeItem('plan10_sibling_accounts');
+          }
           if (redirectUrl && redirectUrl !== '#') {
             setTimeout(() => router.push(redirectUrl), 800);
           }

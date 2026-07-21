@@ -12,12 +12,16 @@ generator client {
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
+  publicId  String?  @unique
   password  String
   name      String
   email     String
   role      String
   phone     String?
   createdAt DateTime @default(now())
+
+  @@index([phone])
+  @@index([role])
 }
 
 model Application {
@@ -37,13 +41,20 @@ model Application {
   status         String   @default("PENDING")
   submittedAt    DateTime @default(now())
   referredBy     String?
+
+  @@index([phone])
+  @@index([status])
+  @@index([purpose])
+  @@index([referredBy])
 }
 
 model Member {
   memberId             String  @id
+  publicId             String? @unique
   name                 String
   phone                String
   nid                  String
+  category             String  @default("INVESTOR")
   capitalInvested      Float
   termMonths           Int
   monthlyProfit        Float
@@ -63,6 +74,13 @@ model Member {
   investorParent       String?
   investorLeft         String?
   investorRight        String?
+
+  @@index([phone])
+  @@index([referredBy])
+  @@index([buyerReferredBy])
+  @@index([buyerParent])
+  @@index([investorParent])
+  @@index([status])
 }
 
 model Payout {
@@ -77,6 +95,10 @@ model Payout {
   status        String   @default("PENDING")
   method        String   @default("Bank Wire / bKash")
   createdAt     DateTime @default(now())
+
+  @@index([memberId])
+  @@index([status])
+  @@index([memberId, monthNumber])
 }
 
 model Product {
@@ -121,6 +143,10 @@ model Order {
   price       Float
   status      String   @default("PENDING")
   createdAt   DateTime @default(now())
+
+  @@index([username])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model Wallet {
@@ -137,6 +163,10 @@ model Transaction {
   description String
   date        DateTime @default(now())
   wallet      Wallet   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@index([username])
+  @@index([type])
+  @@index([date])
 }
 
 model Notification {
@@ -146,6 +176,9 @@ model Notification {
   type      String   @default("SYSTEM")
   timestamp DateTime @default(now())
   isRead    Boolean  @default(false)
+
+  @@index([username])
+  @@index([timestamp])
 }
 
 model Withdrawal {
@@ -157,4 +190,8 @@ model Withdrawal {
   status        String    @default("PENDING")
   requestedAt   DateTime  @default(now())
   processedAt   DateTime?
+
+  @@index([username])
+  @@index([status])
+  @@index([requestedAt])
 }

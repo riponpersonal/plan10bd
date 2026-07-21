@@ -7,6 +7,7 @@ export default function AdminMembersPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [filter, setFilter] = useState('ALL'); // 'ALL', 'INVESTOR', 'BUYER', 'BOTH'
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Create Member Modal States
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -167,8 +168,7 @@ export default function AdminMembersPage() {
     if (!confirm(`Are you sure you want to permanently delete member profile ${memberId}?`)) return;
     try {
       const res = await fetch(`/api/members?memberId=${memberId}`, {
-        method: 'DELETE',
-        headers: { 'x-admin-role': 'ADMIN' }
+        method: 'DELETE'
       });
       const data = await res.json();
       if (data.success) {
@@ -185,11 +185,35 @@ export default function AdminMembersPage() {
 
   const formatBDT = (amt) => '৳' + Math.round(Number(amt)).toLocaleString('en-IN');
 
+  // Count occurrences of each phone number to identify multiple accounts
+  const phoneCounts = {};
+  members.forEach((m) => {
+    if (m.phone) {
+      const p = m.phone.trim();
+      phoneCounts[p] = (phoneCounts[p] || 0) + 1;
+    }
+  });
+
   const filteredMembers = members.filter((m) => {
-    if (filter === 'ALL') return true;
-    if (filter === 'INVESTOR') return m.category === 'INVESTOR' || m.category === 'BOTH';
-    if (filter === 'BUYER') return m.category === 'BUYER' || m.category === 'BOTH';
-    return m.category === filter;
+    // 1. Category filter
+    let matchCategory = true;
+    if (filter === 'INVESTOR') matchCategory = m.category === 'INVESTOR' || m.category === 'BOTH';
+    else if (filter === 'BUYER') matchCategory = m.category === 'BUYER' || m.category === 'BOTH';
+    else if (filter === 'BOTH') matchCategory = m.category === 'BOTH';
+
+    if (!matchCategory) return false;
+
+    // 2. Search term filter
+    if (searchTerm.trim() !== '') {
+      const term = searchTerm.toLowerCase();
+      const nameMatch = (m.name || '').toLowerCase().includes(term);
+      const phoneMatch = (m.phone || '').toLowerCase().includes(term);
+      const idMatch = (m.memberId || '').toLowerCase().includes(term);
+      const publicIdMatch = (m.publicId || '').toLowerCase().includes(term);
+      return nameMatch || phoneMatch || idMatch || publicIdMatch;
+    }
+
+    return true;
   });
 
   return (
@@ -200,6 +224,47 @@ export default function AdminMembersPage() {
           <p style={{ color: '#64748b', margin: '4px 0 0 0' }}>Verified members with active halal capital return accounts or buyer statuses.</p>
         </div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Search Bar */}
+          <div style={{ position: 'relative', minWidth: '220px' }}>
+            <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: '0.85rem' }}></i>
+            <input
+              type="text"
+              placeholder="Search name, phone, ID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px 8px 36px',
+                background: '#0f172a',
+                border: '1px solid #334155',
+                borderRadius: '8px',
+                color: '#fff',
+                fontSize: '0.85rem',
+                outline: 'none',
+              }}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  padding: 0
+                }}
+              >
+                <i className="fa-solid fa-circle-xmark"></i>
+              </button>
+            )}
+          </div>
+
           <button
             onClick={handleOpenCreateModal}
             className="btn-action btn-approve"
@@ -278,7 +343,14 @@ export default function AdminMembersPage() {
             <tbody>
               {filteredMembers.map((m) => (
                 <tr key={m.memberId}>
-                  <td><strong style={{ color: '#2563eb' }}>{m.memberId}</strong></td>
+                  <td>
+                    <strong style={{ color: '#2563eb' }}>{m.memberId}</strong>
+                    {m.publicId && (
+                      <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '2px', opacity: 0.85 }}>
+                        Public ID: <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>{m.publicId}</span>
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <strong>{m.name}</strong>
@@ -313,7 +385,41 @@ export default function AdminMembersPage() {
                         {m.category === 'BOTH' ? 'Both' : m.category.toLowerCase()}
                       </span>
                     </div>
-                    <small style={{ color: '#64748b' }}>{m.phone}</small>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                      <small style={{ color: '#64748b' }}>{m.phone}</small>
+                      {phoneCounts[m.phone?.trim()] > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchTerm(m.phone?.trim())}
+                          style={{
+                            background: 'rgba(245, 158, 11, 0.12)',
+                            color: '#f59e0b',
+                            border: '1px solid rgba(245, 158, 11, 0.25)',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            transition: 'all 0.2s',
+                          }}
+                          title={`This phone number is shared by ${phoneCounts[m.phone?.trim()]} active accounts. Click to show all sibling accounts.`}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(245, 158, 11, 0.2)';
+                            e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(245, 158, 11, 0.12)';
+                            e.currentTarget.style.borderColor = 'rgba(245, 158, 11, 0.25)';
+                          }}
+                        >
+                          <i className="fa-solid fa-circle-exclamation"></i>
+                          {phoneCounts[m.phone?.trim()]} Accounts
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td><strong>{formatBDT(m.capitalInvested)}</strong></td>
                   <td style={{ color: '#f59e0b', fontWeight: 600 }}>{formatBDT(m.monthlyProfit)}</td>

@@ -39,6 +39,7 @@ export async function GET(request) {
         username: payload.username,
         name: payload.name,
         role: payload.role,
+        publicId: payload.publicId || null,
       },
     });
   } catch (error) {
@@ -48,8 +49,8 @@ export async function GET(request) {
 
 /**
  * POST /api/auth/session
- * Body: { action: 'logout' }
- * Clears the session cookie (logout).
+ * Body: { action: 'logout' } or { action: 'switch_account', targetUsername: string }
+ * Clears the session cookie or switches session to another sibling username under the same phone.
  */
 export async function POST(request) {
   try {
@@ -68,8 +69,70 @@ export async function POST(request) {
       return response;
     }
 
+    if (body.action === 'switch_account') {
+      const { targetUsername } = body;
+      if (!targetUsername) {
+        return NextResponse.json({ success: false, message: 'Target username is required.' }, { status: 400 });
+      }
+
+      const cookieHeader = request.headers.get('cookie') || '';
+      const cookies = Object.fromEntries(
+        cookieHeader.split(';').map((c) => {
+          const [k, ...v] = c.trim().split('=');
+          return [k.trim(), v.join('=')];
+        })
+      );
+
+      const token = cookies[COOKIE_NAME];
+      if (!token) {
+        return NextResponse.json({ success: false, message: 'No active session.' }, { status: 401 });
+      }
+
+      const { valid, payload } = verifySessionToken(token);
+      if (!valid || !payload.phone) {
+        return NextResponse.json({ success: false, message: 'Invalid session or phone number.' }, { status: 401 });
+      }
+
+      // Find the target user
+      const targetUser = await findUserById(targetUsername);
+      if (!targetUser) {
+        return NextResponse.json({ success: false, message: 'Target user not found.' }, { status: 404 });
+      }
+
+      // Check if target user's phone matches current session's phone
+      if (targetUser.phone !== payload.phone) {
+        return NextResponse.json({ success: false, message: 'Unauthorized: Phone numbers do not match.' }, { status: 403 });
+      }
+
+      // Create new session token for the target user
+      const sessionToken = createSessionToken(targetUser);
+      const cookieOpts = getSessionCookieOptions();
+
+      const response = NextResponse.json({
+        success: true,
+        user: {
+          username: targetUser.username,
+          name: targetUser.name,
+          role: targetUser.role,
+          publicId: targetUser.publicId || null,
+        },
+        message: `Successfully switched to account ${targetUser.name}`
+      });
+
+      response.cookies.set(COOKIE_NAME, sessionToken, {
+        httpOnly: cookieOpts.httpOnly,
+        secure: cookieOpts.secure,
+        sameSite: cookieOpts.sameSite,
+        path: cookieOpts.path,
+        maxAge: cookieOpts.maxAge,
+      });
+
+      return response;
+    }
+
     return NextResponse.json({ success: false, message: 'Invalid action.' }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ success: false, message: 'Logout failed.' }, { status: 500 });
+    console.error('Session post failed:', error);
+    return NextResponse.json({ success: false, message: 'Action failed.' }, { status: 500 });
   }
 }

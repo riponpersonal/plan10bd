@@ -35,7 +35,7 @@ function checkAdminRole(request) {
     const { valid, payload } = verifySessionToken(token);
     if (valid && payload?.role === 'ADMIN') return true;
   }
-  return request.headers.get('x-admin-role') === 'ADMIN';
+  return false;
 }
 
 export async function POST(request) {
